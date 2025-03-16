@@ -68,8 +68,14 @@ class L21Loss(LLoss):
     def distance(self, a, b):
         return torch.norm(a - b, dim=-1)  # normalized L2 distance
 
+class L1Loss(LLoss):
+    """L1 distance between 3d points"""
+    
+    def distance(self, a, b):
+        return torch.abs(a - b)
 
 L21 = L21Loss()
+L1 = L1Loss()
 
 
 class MSELoss(LLoss):
@@ -217,6 +223,111 @@ class RGBLoss(Criterion, MultiLoss):
         rgb_loss = sum(ls) / len(ls)
         return rgb_loss, details
 
+class Regr2DGrid(Criterion, MultiLoss):
+    @staticmethod
+    def project_pts3d_to_2d(pts3d, intrinsics, w2c=None):
+        """Project 3D points to 2D
+        pts3d: [B, H, W, 3]
+        intrinsics: [B, 3, 3]
+        w2c: [B, 4, 4] or None, optional extrinsic matrix (world to camera)
+        """
+        B, H, W, _ = pts3d.shape
+        pts3d = pts3d.view(B, -1, 3)
+        
+        # Apply extrinsic transformation if provided
+        if w2c is not None:
+            # Convert to homogeneous coordinates
+            ones = torch.ones(B, pts3d.shape[1], 1, device=pts3d.device)
+            pts3d_hom = torch.cat([pts3d, ones], dim=2)  # [B, H*W, 4]
+            
+            # Apply world to camera transformation
+            pts3d_cam = torch.bmm(pts3d_hom, w2c.transpose(1, 2))  # [B, H*W, 4]
+            pts3d = pts3d_cam[:, :, :3]  # Back to 3D
+        
+        # Apply intrinsic projection
+        pts2d = torch.bmm(intrinsics, pts3d.transpose(1, 2))
+        pts2d = pts2d.transpose(1, 2)
+        pts2d = pts2d / pts2d[..., 2:3].clamp(min=1e-6)
+        
+        return pts2d[..., :2].view(B, H, W, 2)
+
+    def __init__(self, criterion, view_only=False):
+        super().__init__(criterion)
+        self.view_only = view_only
+
+    def img_loss(self, a, b):
+        return self.criterion(a, b)
+
+    def compute_loss(self, gts, preds, **kw):
+        # gts: [B, 3, H, W]
+        H = gts[0]["img"].shape[-2]
+        W = gts[0]["img"].shape[-1]
+        B = len(gts)
+        device = gts[0]["img"].device
+        # create dummy gt: 2D grid [0..W] x [0..H]
+        gt_grids_x = torch.linspace(0, W - 1, W, device=device, dtype=torch.float32)
+        gt_grids_y = torch.linspace(0, H - 1, H, device=device, dtype=torch.float32)
+        gt_grids_xy = torch.stack(torch.meshgrid(gt_grids_y, gt_grids_x), dim=-1)
+        # exchange the order of x and y in the grid, because for image uv: u is the column index, v is the row index
+        gt_grids_xy = gt_grids_xy.flip(-1)
+
+        # ----------------------------- self reprojection ---------------------------- #
+        # project 3D points to 2D
+        # currently uses a gt intrinsics, will use pred intrinsics in the future
+        pr_pts_list = [pred["pts3d_in_self_view"] for pred in preds]
+        intrinsics = [gt["camera_intrinsics"] for gt in gts] 
+
+        # print(f"shape of pts3d: {pr_pts_list[0].shape}")
+        # print(f"shape of intrinsics: {intrinsics[0].shape}")
+        pr_grids_xy = [
+            self.project_pts3d_to_2d(pr_pts, intri).squeeze(0)      # current batch size = 0
+            for pr_pts, intri in zip(pr_pts_list, intrinsics)
+        ]
+        # print(f"shape of pr_grids_xy: {pr_grids_xy[0].shape}")
+        # print(f"shape of gt_grids_xy: {gt_grids_xy.shape}")
+        ls = [
+            self.img_loss(pr_grid, gt_grids_xy)
+            for pr_grid in pr_grids_xy
+        ]
+
+        # ---------------------------- global reprojection --------------------------- #
+        pr_pts_list = [geotrf(inv(pose_encoding_to_camera(pred["camera_pose"])), pred["pts3d_in_other_view"]) for pred in preds]
+        intrinsics = [gt["camera_intrinsics"] for gt in gts]
+        
+        pr_grids_xy = [
+            self.project_pts3d_to_2d(pr_pts, intri).squeeze(0)
+            for pr_pts, intri in zip(pr_pts_list, intrinsics)
+        ]
+        global_ls = [
+            self.img_loss(pr_grid, gt_grids_xy)
+            for pr_grid in pr_grids_xy
+        ]
+
+        details = {}
+        self_name = type(self).__name__
+        for i, l in enumerate(ls):
+            details[self_name + f"_grid/{i+1}"] = float(l)
+            details[self_name + f"_global_grid/{i+1}"] = float(global_ls[i])
+        
+        # --------------------- add other info to details for vis -------------------- #
+        for i in range(len(ls)):
+            details[f"gt_img{i+1}"] = gts[i]["img"].permute(0, 2, 3, 1).detach()
+            details[f"self_conf_{i+1}"] = preds[i]["conf_self"].detach()
+            details[f"conf_{i+1}"] = preds[i]["conf"].detach()
+
+            if "img_mask" in gts[i] and "ray_mask" in gts[i]:
+                details[f"img_mask_{i+1}"] = gts[i]["img_mask"].detach()
+                details[f"ray_mask_{i+1}"] = gts[i]["ray_mask"].detach()
+
+            if "desc" in preds[i]:
+                details[f"desc_{i+1}"] = preds[i]["desc"].detach()
+
+            details[f"pred_rgb_{i+1}"] = preds[i]["rgb"].detach()
+
+        local_grid_loss = sum(ls) / len(ls) 
+        global_grid_loss = sum(global_ls) / len(global_ls)
+        print(f">>> local_grid_loss: {local_grid_loss}, global_grid_loss: {global_grid_loss}")
+        return (local_grid_loss + global_grid_loss) / 2, details
 
 class DepthScaleShiftInvLoss(BaseCriterion):
     """scale and shift invariant loss"""
