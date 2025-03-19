@@ -116,9 +116,10 @@ class MetricLogger(object):
         )
 
     def __str__(self):
-        loss_str = []
+        loss_str = ["\n === MetricLogger ===\n"]
         for name, meter in self.meters.items():
-            loss_str.append("{}: {}".format(name, str(meter)))
+            loss_str.append("\t{}: {}\n".format(name, str(meter)))
+        loss_str.append("\n === MetricLogger ===\n")
         return self.delimiter.join(loss_str)
 
     def synchronize_between_processes(self, accelerator):
@@ -571,7 +572,7 @@ def get_parameter_groups(
 
         parameter_group_vars[group_name]["params"].append(param)
         parameter_group_names[group_name]["params"].append(name)
-    printer.info("Param groups = %s" % json.dumps(parameter_group_names, indent=2))
+    # printer.info("Param groups = %s" % json.dumps(parameter_group_names, indent=2))
     return list(parameter_group_vars.values())
 
 

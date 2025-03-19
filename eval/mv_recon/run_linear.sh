@@ -4,8 +4,11 @@ set -e
 
 workdir='.'
 model_name='ours'
-ckpt_name='cut3r_224_linear_4'
+# ckpt_name='cut3r_224_linear_4'
+# ckpt_name='regr2d-new'
+ckpt_name='latest'
 model_weights="${workdir}/src/${ckpt_name}.pth"
+# model_weights="${workdir}/src/checkpoints/regr2d-new/${ckpt_name}.pth"
 
 output_dir="${workdir}/eval_results/mv_recon/${model_name}_${ckpt_name}"
 echo "$output_dir"

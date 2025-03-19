@@ -224,6 +224,9 @@ def train(args):
         optimizer, model, data_loader_train
     )
 
+    for test_name, test_loader in data_loader_test.items():
+        data_loader_test[test_name] = accelerator.prepare(test_loader)
+
     def write_log_stats(epoch, train_stats, test_stats):
         if accelerator.is_main_process:
             if log_writer is not None:

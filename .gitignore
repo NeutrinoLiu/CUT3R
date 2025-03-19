@@ -1,5 +1,7 @@
 eval_results
 tmp
+examples
+*.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
