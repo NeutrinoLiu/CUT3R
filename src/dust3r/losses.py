@@ -262,14 +262,14 @@ class Regr2DGrid(Criterion, MultiLoss):
         # gts: [B, 3, H, W]
         H = gts[0]["img"].shape[-2]
         W = gts[0]["img"].shape[-1]
-        B = len(gts)
+        B = gts[0]["img"].shape[0]
         device = gts[0]["img"].device
         # create dummy gt: 2D grid [0..W] x [0..H]
         gt_grids_x = torch.linspace(0, W - 1, W, device=device, dtype=torch.float32)
         gt_grids_y = torch.linspace(0, H - 1, H, device=device, dtype=torch.float32)
         gt_grids_xy = torch.stack(torch.meshgrid(gt_grids_y, gt_grids_x), dim=-1)
         # exchange the order of x and y in the grid, because for image uv: u is the column index, v is the row index
-        gt_grids_xy = gt_grids_xy.flip(-1)
+        gt_grids_xy = gt_grids_xy.flip(-1).unsqueeze(0).expand(B, -1, -1, -1)
 
         # ----------------------------- self reprojection ---------------------------- #
         # project 3D points to 2D
@@ -277,10 +277,12 @@ class Regr2DGrid(Criterion, MultiLoss):
         pr_pts_list = [pred["pts3d_in_self_view"] for pred in preds]
         intrinsics = [gt["camera_intrinsics"] for gt in gts] 
 
+        # print(f"shape of img: {gts[0]['img'].shape}")
         # print(f"shape of pts3d: {pr_pts_list[0].shape}")
         # print(f"shape of intrinsics: {intrinsics[0].shape}")
+        
         pr_grids_xy = [
-            self.project_pts3d_to_2d(pr_pts, intri).squeeze(0)      # current batch size = 0
+            self.project_pts3d_to_2d(pr_pts, intri)
             for pr_pts, intri in zip(pr_pts_list, intrinsics)
         ]
         # print(f"shape of pr_grids_xy: {pr_grids_xy[0].shape}")
@@ -295,7 +297,7 @@ class Regr2DGrid(Criterion, MultiLoss):
         intrinsics = [gt["camera_intrinsics"] for gt in gts]
         
         pr_grids_xy = [
-            self.project_pts3d_to_2d(pr_pts, intri).squeeze(0)
+            self.project_pts3d_to_2d(pr_pts, intri)
             for pr_pts, intri in zip(pr_pts_list, intrinsics)
         ]
         global_ls = [

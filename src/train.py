@@ -42,6 +42,10 @@ from croco.utils.misc import NativeScalerWithGradNormCount as NativeScaler  # no
 import hydra
 from omegaconf import OmegaConf
 import logging
+logging.getLogger('matplotlib.font_manager').disabled = True
+logging.getLogger('matplotlib.colorbar').disabled = True
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
 import pathlib
 from tqdm import tqdm
 import random
@@ -629,10 +633,10 @@ def test_one_epoch(
                 continue
             log_writer.add_scalar(prefix + "_" + name, val, 1000 * epoch)
 
-        depths_self, gt_depths_self = get_render_results(
+        depths_self, gt_depths_self, gsimg_self, gt_gsimg_self = get_render_results(
             batch, result["pred"], self_view=True
         )
-        depths_cross, gt_depths_cross = get_render_results(
+        depths_cross, gt_depths_cross, gsimg_cross, gt_gsimg_cross = get_render_results(
             batch, result["pred"], self_view=False
         )
         for k in range(len(batch)):
@@ -640,6 +644,10 @@ def test_one_epoch(
             loss_details[f"self_gt_depth_{k+1}"] = gt_depths_self[k].detach().cpu()
             loss_details[f"pred_depth_{k+1}"] = depths_cross[k].detach().cpu()
             loss_details[f"gt_depth_{k+1}"] = gt_depths_cross[k].detach().cpu()
+            loss_details[f"self_pred_gsimg_{k+1}"] = gsimg_self[k].detach().cpu()
+            loss_details[f"self_gt_gsimg_{k+1}"] = gt_gsimg_self[k].detach().cpu()
+            loss_details[f"pred_gsimg_{k+1}"] = gsimg_cross[k].detach().cpu()
+            loss_details[f"gt_gsimg_{k+1}"] = gt_gsimg_cross[k].detach().cpu()
 
         imgs_stacked_dict = get_vis_imgs_new(
             loss_details,
