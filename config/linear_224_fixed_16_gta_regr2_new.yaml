@@ -42,8 +42,8 @@ dist_backend: 'nccl'
 eval_freq: 1
 save_freq: 0.1
 keep_freq: 1
-print_freq: 10
-print_img_freq: 10
+print_freq: 1
+print_img_freq: 1
 num_imgs_vis: 4
 save_dir: 'checkpoints'
 exp_name: 'regr2d-new'

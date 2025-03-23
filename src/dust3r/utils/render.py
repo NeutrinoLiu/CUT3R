@@ -20,7 +20,7 @@ def render_point_cloud(points, colors, intrinsics, width, height):
         image: torch tensor of shape (height, width, 3) containing the rendered image
     """
     # Use the same device as the input points if not specified
-    device = "cuda"
+    device = points.device
     
     # Initialize empty image
     image = torch.zeros((height, width, 3), dtype=torch.float, device=device)
@@ -105,6 +105,7 @@ def render(
     rendered_depths = []
     accs = []
     point_rgbs = []
+    # print(f"""devices of pts3d: {pts3d.device}, quats: {quats.device}, scales: {scales.device}, opacities: {opacities.device}, rgbs: {rgbs.device}""")
     for i in range(batch_size):
         rgbd, acc, _ = rasterization(
             pts3d[i],
@@ -149,11 +150,11 @@ def get_render_results(gts, preds, self_view=False, return_pts_rgb=True):
             if self_view:
                 camera = inv(gt["camera_pose"]).to(device)
                 intrinsics = gt["camera_intrinsics"].to(device)
-                pred = pred["pts3d_in_self_view"]
+                pred = pred["pts3d_in_self_view"].to(device)
             else:
                 camera = inv(gts[0]["camera_pose"]).to(device)
                 intrinsics = gts[0]["camera_intrinsics"].to(device)
-                pred = pred["pts3d_in_other_view"]
+                pred = pred["pts3d_in_other_view"].to(device)
             gt_img = gt["img"].to(device)
             gt_pts3d = gt["pts3d"].to(device)
 
@@ -176,7 +177,7 @@ def get_render_results(gts, preds, self_view=False, return_pts_rgb=True):
 
     return depths, gt_depths, imgs, gt_imgs
 
-def get_render_results_reproj(gts, preds, return_pts_rgb=True):
+def get_render_results_reproj(gts, preds, return_pts_rgb=True, ignore_gt=False):
     device = preds[0]["pts3d_in_self_view"].device
     with torch.no_grad():
         depths = []
@@ -186,14 +187,18 @@ def get_render_results_reproj(gts, preds, return_pts_rgb=True):
         for i, (gt, pred) in enumerate(zip(gts, preds)):
             intrinsics = gt["camera_intrinsics"].to(device)
             gt_rgb = gt["img"].to(device)
-
             pred_camera = inv(pose_encoding_to_camera(pred["camera_pose"])).to(device)
-            pred_pts3d = pred["pts3d_in_other_view"]
-            gt_camera = inv(gt["camera_pose"]).to(device)
-            gt_pts3d = gt["pts3d"].to(device)
-
+            pred_pts3d = pred["pts3d_in_other_view"].to(device)
             ptimg, gsimg, depth, _ = render(intrinsics, geotrf(pred_camera, pred_pts3d), gt_rgb)
-            gt_ptimg, gt_gsimg, gt_depth, _ = render(intrinsics, geotrf(gt_camera, gt_pts3d), gt_rgb)
+
+            if not ignore_gt:
+                gt_camera = inv(gt["camera_pose"]).to(device)
+                gt_pts3d = gt["pts3d"].to(device)
+                gt_ptimg, gt_gsimg, gt_depth, _ = render(intrinsics, geotrf(gt_camera, gt_pts3d), gt_rgb)
+            else:
+                gt_depth = None
+                gt_ptimg = None
+                gt_gsimg = None
 
             depths.append(depth)
             gt_depths.append(gt_depth)
@@ -204,5 +209,6 @@ def get_render_results_reproj(gts, preds, return_pts_rgb=True):
                 # return 3dgs rgb
                 imgs.append(gsimg)
                 gt_imgs.append(gt_gsimg)
+    
     return depths, gt_depths, imgs, gt_imgs
 

@@ -33,6 +33,7 @@ import imageio.v2 as iio
 # Set random seed for reproducibility.
 random.seed(42)
 
+IMG_INPUT = None
 
 def parse_args():
     """Parse command-line arguments."""
@@ -101,6 +102,9 @@ def prepare_input(
     from src.dust3r.utils.image import load_images
 
     images = load_images(img_paths, size=size)
+    print(f">>> Loaded {len(images)} images of shape {images[0]['img'].shape}")
+    global IMG_INPUT
+    IMG_INPUT = [img['img'].cuda() for img in images]  # Store original images for evaluation
     views = []
 
     if raymaps is None and raymap_mask is None:
@@ -188,12 +192,38 @@ def prepare_input(
 
 # -------------------------- evaluate 3d consistency ------------------------- #
 def eval_3d(gts, preds):
+
     # part 1: 2d reprojection error
     from src.dust3r.losses import Regr2DGrid, ConfLoss, L21Loss
+    from src.dust3r.utils.render import get_render_results_reproj
     loss_grid = Regr2DGrid(L21Loss())
     loss, _ = loss_grid.compute_loss(gts, preds, global_only=True, conf_weighted=True)
     print(f">>> 2D reprojection error: {loss:.4f}")
+
     # part 2: 3dgs rendering error
+    _, _, gsimg, _ = get_render_results_reproj(
+        gts, preds, return_pts_rgb=False, ignore_gt=True
+    )
+    curtime = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    output_dir = os.path.join("./3d_reproj", curtime)
+    os.makedirs(output_dir, exist_ok=True)
+    # print(f"img datarange: {gsimg[0].min()}, {gsimg[0].max()}")
+    for i, img in enumerate(gsimg):
+        img = (img + 1) / 2  # scale to [0, 1]
+        img = (img[0].cpu().numpy() * 255).astype(np.uint8) # batch size 1
+        iio.imwrite(os.path.join(output_dir, f"{i:06d}.png"), img)
+    print(f">>> 3dgs reprojection error saved to {output_dir}")
+
+    # evaluate mssim and psnr, use torchmetrics
+    from torchmetrics import StructuralSimilarityIndexMeasure, PeakSignalNoiseRatio
+    ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(gsimg[0].device)
+    psnr = PeakSignalNoiseRatio(data_range=1.0).to(gsimg[0].device)
+
+    gtimg = torch.stack([g["img"] for g in gts]).squeeze(1)
+    ssim_score = ssim(torch.stack(gsimg).squeeze(1).permute(0, 3, 1, 2), gtimg)
+    psnr_score = psnr(torch.stack(gsimg).squeeze(1).permute(0, 3, 1, 2), gtimg)
+    print(f">>> SSIM: {ssim_score:.4f}, PSNR: {psnr_score:.4f}")
+
 # ------------------------------------- - ------------------------------------ #
 
 
@@ -242,13 +272,12 @@ def prepare_output(outputs, outdir, revisit=1, use_pose=True):
     # Estimate focal length based on depth.
     T, H, W, _ = pts3ds_self.shape
     print(">>> sequence length:", T)
-    print(">>> pts3ds_self shape:", pts3ds_self.shape)
     pp = torch.tensor([W // 2, H // 2], device=pts3ds_self.device).float().repeat(T, 1)
     focal = estimate_focal_knowing_depth(pts3ds_self, pp, focal_mode="weiszfeld")
     
     # ---------------------------- eval 3d consistency --------------------------- #
     intrinsics = (
-        torch.eye(3).unsqueeze(0).repeat(T, 1, 1).to(pts3ds_self.device)
+        torch.eye(3).unsqueeze(0).repeat(T, 1, 1).to("cuda:0")
     )  # B, 3, 3
     intrinsics[:, 0, 0] = focal.detach()
     intrinsics[:, 1, 1] = focal.detach()
@@ -256,15 +285,16 @@ def prepare_output(outputs, outdir, revisit=1, use_pose=True):
     intrinsics[:, 1, 2] = pp[:, 1]
     print(f"focal length: {focal.detach().cpu().numpy()}")
 
+    pred_gpu = [{
+        k: v.to("cuda:0") for k, v in outputs["pred"][i].items()
+    } for i in range(len(outputs["pred"]))]
 
-    dummy_img = torch.zeros((1, 3, H, W), device=pts3ds_self.device)
-
-
+    global IMG_INPUT
     eval_3d([{
-                "img": dummy_img,
+                "img": IMG_INPUT[i],
                 "camera_intrinsics": intrinsics[i:i + 1],
             } for i in range(T)],
-            outputs["pred"])
+           pred_gpu)
     
     # ------------------------------------- - ------------------------------------ #
 
