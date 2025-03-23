@@ -135,16 +135,16 @@ def render(
     # print(f"data range of point rgbs: {point_rgbs.min()}, {point_rgbs.max()}")
     # raise ValueError
 
-    return point_rgbs, rendered_depths, accs
+    return point_rgbs, rendered_rgbs, rendered_depths, accs
 
 
-def get_render_results(gts, preds, self_view=False):
+def get_render_results(gts, preds, self_view=False, return_pts_rgb=True):
     device = preds[0]["pts3d_in_self_view"].device
     with torch.no_grad():
         depths = []
         gt_depths = []
-        gsimgs = []
-        gt_gsimgs = []
+        imgs = []
+        gt_imgs = []
         for i, (gt, pred) in enumerate(zip(gts, preds)):
             if self_view:
                 camera = inv(gt["camera_pose"]).to(device)
@@ -157,8 +157,8 @@ def get_render_results(gts, preds, self_view=False):
             gt_img = gt["img"].to(device)
             gt_pts3d = gt["pts3d"].to(device)
 
-            gsimg, depth, _ = render(intrinsics, pred, gt_img)
-            gt_gsimg, gt_depth, _ = render(intrinsics, geotrf(camera, gt_pts3d), gt_img)
+            ptimg, gsimg, depth, _ = render(intrinsics, pred, gt_img)
+            gt_ptimg, gt_gsimg, gt_depth, _ = render(intrinsics, geotrf(camera, gt_pts3d), gt_img)
             
             # print(f"shape of gsimg: {gsimg[0].shape}")
             # print(f"data range of gsimg: {gsimg[0].min()}, {gsimg[0].max()}")
@@ -166,7 +166,12 @@ def get_render_results(gts, preds, self_view=False):
 
             depths.append(depth)
             gt_depths.append(gt_depth)
-            gsimgs.append(gsimg)
-            gt_gsimgs.append(gt_gsimg)
+            if return_pts_rgb:
+                imgs.append(ptimg)
+                gt_imgs.append(gt_ptimg)
+            else:
+                # return 3dgs rgb
+                imgs.append(gsimg)
+                gt_imgs.append(gt_gsimg)
 
-    return depths, gt_depths, gsimgs, gt_gsimgs
+    return depths, gt_depths, imgs, gt_imgs # yet depth is still 3dgs based to avoid sparsity

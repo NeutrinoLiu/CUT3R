@@ -104,6 +104,7 @@ def save_current_code(outdir):
             "*.idea*",
             "*.zip",
             "*.jpg",
+            "*.pth",
         ),
         dirs_exist_ok=True,
     )
