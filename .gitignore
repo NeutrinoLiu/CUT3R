@@ -2,6 +2,7 @@ eval_results
 tmp
 examples
 *.ipynb
+3d_reproj
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
