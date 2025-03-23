@@ -329,6 +329,8 @@ class Regr2DGrid(Criterion, MultiLoss):
         local_grid_loss = sum(ls) / len(ls) 
         global_grid_loss = sum(global_ls) / len(global_ls)
         print(f">>> local_grid_loss: {local_grid_loss}, global_grid_loss: {global_grid_loss}")
+        if kw is not None and kw.get("global_only", None) is not None:
+            return global_grid_loss, details
         return (local_grid_loss + global_grid_loss) / 2, details
 
 class DepthScaleShiftInvLoss(BaseCriterion):
