@@ -34,7 +34,7 @@ from dust3r.datasets import get_data_loader
 from dust3r.losses import *  # noqa: F401, needed when loading the model
 from dust3r.inference import loss_of_one_batch, loss_of_one_batch_tbptt  # noqa
 from dust3r.viz import colorize
-from dust3r.utils.render import get_render_results
+from dust3r.utils.render import get_render_results, get_render_results_reproj
 import dust3r.utils.path_to_croco  # noqa: F401
 import croco.utils.misc as misc  # noqa
 from croco.utils.misc import NativeScalerWithGradNormCount as NativeScaler  # noqa
@@ -104,6 +104,7 @@ def save_current_code(outdir):
             "*.idea*",
             "*.zip",
             "*.jpg",
+            "*.pth",
         ),
         dirs_exist_ok=True,
     )
@@ -518,8 +519,11 @@ def train_one_epoch(
                     depths_self, gt_depths_self, gsimg_self, gt_gsimg_self = get_render_results(
                         batch, result["pred"], self_view=True
                     )
-                    depths_cross, gt_depths_cross, gsimg_cross, gt_gsimg_cross = get_render_results(
-                        batch, result["pred"], self_view=False
+                    # depths_cross, gt_depths_cross, gsimg_cross, gt_gsimg_cross = get_render_results(
+                    #     batch, result["pred"], self_view=False
+                    # )
+                    depths_cross, gt_depths_cross, gsimg_cross, gt_gsimg_cross = get_render_results_reproj(
+                        batch, result["pred"]
                     )
                     for k in range(len(batch)):
                         loss_details[f"self_pred_depth_{k+1}"] = (
@@ -795,8 +799,8 @@ def vis_and_cat(
             self_gt_depths_vis,
             self_pred_depths_vis,
             self_conf_vis,
-            # cross_gt_gsimg_vis,
-            # cross_pred_gsimg_vis,
+            cross_gt_gsimg_vis,
+            cross_pred_gsimg_vis,
             # cross_gt_depths_vis,
             # cross_pred_depths_vis,
             # cross_conf_vis,

@@ -1,7 +1,7 @@
 import torch
 from gsplat import rasterization
 from dust3r.utils.geometry import inv, geotrf
-
+from dust3r.utils.camera import pose_encoding_to_camera
 
 # ------------------------------ point renderer ------------------------------ #
 def render_point_cloud(points, colors, intrinsics, width, height):
@@ -170,3 +170,30 @@ def get_render_results(gts, preds, self_view=False):
             gt_gsimgs.append(gt_gsimg)
 
     return depths, gt_depths, gsimgs, gt_gsimgs
+
+def get_render_results_reproj(gts, preds):
+    device = preds[0]["pts3d_in_self_view"].device
+    with torch.no_grad():
+        depths = []
+        gt_depths = []
+        gsimgs = []
+        gt_gsimgs = []
+        for i, (gt, pred) in enumerate(zip(gts, preds)):
+            intrinsics = gt["camera_intrinsics"].to(device)
+            gt_rgb = gt["img"].to(device)
+
+            pred_camera = inv(pose_encoding_to_camera(pred["camera_pose"])).to(device)
+            pred_pts3d = pred["pts3d_in_other_view"]
+            gt_camera = inv(gt["camera_pose"]).to(device)
+            gt_pts3d = gt["pts3d"].to(device)
+
+            gsimg, depth, _ = render(intrinsics, geotrf(pred_camera, pred_pts3d), gt_rgb)
+            gt_gsimg, gt_depth, _ = render(intrinsics, geotrf(gt_camera, gt_pts3d), gt_rgb)
+
+            depths.append(depth)
+            gt_depths.append(gt_depth)
+            gsimgs.append(gsimg)
+            gt_gsimgs.append(gt_gsimg)
+
+    return depths, gt_depths, gsimgs, gt_gsimgs
+
