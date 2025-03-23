@@ -215,14 +215,14 @@ def eval_3d(gts, preds):
     print(f">>> 3dgs reprojection error saved to {output_dir}")
 
     # evaluate mssim and psnr, use torchmetrics
-    from torchmetrics import StructuralSimilarityIndexMeasure, PeakSignalNoiseRatio
-    ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(gsimg[0].device)
+    from torchmetrics import MultiScaleStructuralSimilarityIndexMeasure, PeakSignalNoiseRatio
+    mssim = MultiScaleStructuralSimilarityIndexMeasure(data_range=1.0).to(gsimg[0].device)
     psnr = PeakSignalNoiseRatio(data_range=1.0).to(gsimg[0].device)
 
     gtimg = torch.stack([g["img"] for g in gts]).squeeze(1)
-    ssim_score = ssim(torch.stack(gsimg).squeeze(1).permute(0, 3, 1, 2), gtimg)
+    ssim_score = mssim(torch.stack(gsimg).squeeze(1).permute(0, 3, 1, 2), gtimg)
     psnr_score = psnr(torch.stack(gsimg).squeeze(1).permute(0, 3, 1, 2), gtimg)
-    print(f">>> SSIM: {ssim_score:.4f}, PSNR: {psnr_score:.4f}")
+    print(f">>> MSSIM: {ssim_score:.4f}, PSNR: {psnr_score:.4f}")
 
 # ------------------------------------- - ------------------------------------ #
 
