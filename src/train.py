@@ -471,6 +471,7 @@ def train_one_epoch(
 
             is_metric = batch[0]["is_metric"]
             curr_num_view = len(batch)
+            print(">>> trained a sequence of {} views, details ↓".format(curr_num_view))
 
             del loss
             tb_vis_img = (data_iter_step + 1) % accum_iter == 0 and (

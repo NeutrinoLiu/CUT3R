@@ -50,7 +50,7 @@ allow_repeat: True
 # dataset26: DynamicReplica(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/custom_data/processed_dynamic_replica/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset27: Spring(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/custom_data/processed_spring/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset28: BEDLAM_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/custom_data/processed_bedlam", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
-dataset29: MVS_Synth_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/custom_data/processed_mvs_synth", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
+dataset29: MVS_Synth_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../data/custom_data/processed_mvs_synth", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset30: PointOdyssey_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/custom_data/processed_point_odyssey", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 
 # dataset31: UASOL_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/custom_data/processed_uasol", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
@@ -83,7 +83,7 @@ dist_backend: 'nccl'
 eval_freq: 1
 save_freq: 0.1
 keep_freq: 1
-print_freq: 100
+print_freq: 1
 print_img_freq: 50
 num_imgs_vis: 4
 save_dir: 'checkpoints'
