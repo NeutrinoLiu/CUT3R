@@ -223,6 +223,71 @@ class RGBLoss(Criterion, MultiLoss):
         rgb_loss = sum(ls) / len(ls)
         return rgb_loss, details
 
+import torch.nn.functional as F
+from dust3r.utils.render import render
+from fused_ssim import fused_ssim
+
+class PhotometricLoss(BaseCriterion):
+    SSIM_LAMBDA = 0.2
+    """Photometric loss based on SSIM and L1 loss
+    directly borrowed from https://github.com/nerfstudio-project/gsplat/blob/main/examples/simple_trainer.py
+    pip install git+https://github.com/rahul-goel/fused-ssim@1272e21a282342e89537159e4bad508b19b34157
+    """
+    def forward(self, imgs, gts):
+        # expected dims: [B, 3, H, W]
+        l1loss = F.l1_loss(imgs, gts)
+        ssimloss = 1.0 - fused_ssim(imgs, gts, padding="valid")
+        loss = l1loss * (1.0 - PhotometricLoss.SSIM_LAMBDA) \
+             + ssimloss * PhotometricLoss.SSIM_LAMBDA
+        return loss
+
+
+class RenderLoss(Criterion, MultiLoss):
+    def __init__(self):
+        super().__init__(PhotometricLoss())
+
+    def img_loss(self, a, b):
+        return self.criterion(a, b)
+
+    def compute_loss(self, gts, preds, **kw):
+        # gts: [B, 3, H, W]
+        H = gts[0]["img"].shape[-2]
+        W = gts[0]["img"].shape[-1]
+        B = gts[0]["img"].shape[0]
+        device = gts[0]["img"].device
+
+        gt_img = [gt["img"] for gt in gts] # [B, 3, H, W]
+        rgb_reference = gt_img
+
+        # ----------------------------- self reprojection ---------------------------- #
+        # project 3D points to 2D
+        # currently uses a gt intrinsics, will use pred intrinsics in the future
+        pr_pts_list = [pred["pts3d_in_self_view"] for pred in preds]
+        intrinsics = [gt["camera_intrinsics"] for gt in gts] 
+        result = [render(intri, pr_pts, rgb) for intri, pr_pts, rgb in zip(intrinsics, pr_pts_list, rgb_reference)]
+        pred_img = [res[1].permute(0, 3, 1, 2) for res in result] # result: (pts_render, 3dgs_render, 3dgs_depth, accs), img in (B, H, W, 3)
+        ls = [self.img_loss(pred_rgb, gt_rgb) for pred_rgb, gt_rgb in zip(pred_img, gt_img)]
+
+        # ---------------------------- global reprojection --------------------------- #
+        pr_pts_list = [geotrf(inv(pose_encoding_to_camera(pred["camera_pose"])), pred["pts3d_in_other_view"]) for pred in preds]
+        intrinsics = [gt["camera_intrinsics"] for gt in gts]
+        result = [render(intri, pr_pts, rgb) for intri, pr_pts, rgb in zip(intrinsics, pr_pts_list, rgb_reference)]
+        global_pred_img = [res[1].permute(0, 3, 1, 2) for res in result] # result: (pts_render, 3dgs_render, 3dgs_depth, accs), img in (B, H, W, 3)
+        global_ls = [self.img_loss(pred_rgb, gt_rgb) for pred_rgb, gt_rgb in zip(global_pred_img, gt_img)]
+
+        details = {}
+        self_name = type(self).__name__
+        for i, l in enumerate(ls):
+            details[self_name + f"_render/{i+1}"] = float(l)
+            details[self_name + f"_global_render/{i+1}"] = float(global_ls[i])
+
+        local_render_loss = sum(ls) / len(ls) 
+        global_render_loss = sum(global_ls) / len(global_ls)
+        print(f">>> [render loss] batchsize {B}, local_render_loss: {local_render_loss}, global_render_loss: {global_render_loss}")
+        if kw is not None and kw.get("global_only", None) is not None:
+            return global_render_loss, details
+        return (local_render_loss + global_render_loss) / 2, details
+
 class Regr2DGrid(Criterion, MultiLoss):
     @staticmethod
     def project_pts3d_to_2d(pts3d, intrinsics, w2c=None):
@@ -328,7 +393,7 @@ class Regr2DGrid(Criterion, MultiLoss):
 
         local_grid_loss = sum(ls) / len(ls) 
         global_grid_loss = sum(global_ls) / len(global_ls)
-        print(f">>> batchsize {B}, local_grid_loss: {local_grid_loss}, global_grid_loss: {global_grid_loss}")
+        print(f">>> [Regr2D loss] batchsize {B}, local_grid_loss: {local_grid_loss}, global_grid_loss: {global_grid_loss}")
         if kw is not None and kw.get("global_only", None) is not None:
             return global_grid_loss, details
         return (local_grid_loss + global_grid_loss) / 2, details

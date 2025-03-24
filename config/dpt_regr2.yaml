@@ -66,8 +66,8 @@ gradient_checkpointing: True
 epochs: 10
 start_epoch: 0
 weight_decay: 0.05
-lr: 1e-6
-min_lr: 1e-7
+lr: 1e-7
+min_lr: 1e-8
 warmup_epochs: 0.5
 amp: 1
 

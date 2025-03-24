@@ -185,10 +185,10 @@ def train(args):
         f"Decoder parameters: {sum(p.numel() for p in model.dec_blocks.parameters())}"
     )
 
-    printer.info(f">> Creating train criterion = {args.train_criterion}")
+    printer.info(f">>> Creating train criterion = {args.train_criterion}")
     train_criterion = eval(args.train_criterion).to(device)
     printer.info(
-        f">> Creating test criterion = {args.test_criterion or args.train_criterion}"
+        f">>> Creating test criterion = {args.test_criterion or args.train_criterion}"
     )
     test_criterion = eval(args.test_criterion or args.criterion).to(device)
 

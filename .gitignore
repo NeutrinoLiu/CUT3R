@@ -3,6 +3,7 @@ tmp
 examples
 *.ipynb
 3d_reproj
+config/tmp*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
