@@ -14,7 +14,11 @@ from dust3r.utils.geometry import (
     get_group_pointcloud_center_scale,
     weighted_procrustes,
 )
-from gsplat import rasterization
+try:
+    from gsplat import rasterization
+except:
+    print(">>> GSPLAT NOT AVAILABLE, use naive point rendering")
+
 import numpy as np
 import lpips
 from dust3r.utils.camera import (
@@ -272,7 +276,7 @@ class RenderLoss(Criterion, MultiLoss):
         pr_pts_list = [geotrf(inv(pose_encoding_to_camera(pred["camera_pose"])), pred["pts3d_in_other_view"]) for pred in preds]
         intrinsics = [gt["camera_intrinsics"] for gt in gts]
         result = [render(intri, pr_pts, rgb) for intri, pr_pts, rgb in zip(intrinsics, pr_pts_list, rgb_reference)]
-        global_pred_img = [res[1].permute(0, 3, 1, 2) for res in result] # result: (pts_render, 3dgs_render, 3dgs_depth, accs), img in (B, H, W, 3)
+        global_pred_img = [res[0].permute(0, 3, 1, 2) for res in result] # result: [rgb, depth], (B, H, W, 3), (B, H, W)
         global_ls = [self.img_loss(pred_rgb, gt_rgb) for pred_rgb, gt_rgb in zip(global_pred_img, gt_img)]
 
         details = {}
