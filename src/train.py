@@ -455,8 +455,12 @@ def train_one_epoch(
             loss_value = float(loss)
 
             if not math.isfinite(loss_value):
+                is_finite = {
+                    k: torch.isfinite(v).all().item()
+                    for k, v in loss_details.items()
+                }
                 print(
-                    f"Loss is {loss_value}, stopping training, loss details: {loss_details}"
+                    f"Loss is {loss_value}, stopping training, loss details: {is_finite}"
                 )
                 sys.exit(1)
             if not result.get("already_backprop", False):
