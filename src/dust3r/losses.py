@@ -243,8 +243,9 @@ class PhotometricLoss(BaseCriterion):
 
 
 class RenderLoss(Criterion, MultiLoss):
-    def __init__(self):
+    def __init__(self, verbose=False):
         super().__init__(PhotometricLoss())
+        self.verbose = verbose
 
     def img_loss(self, a, b):
         return self.criterion(a, b)
@@ -283,7 +284,8 @@ class RenderLoss(Criterion, MultiLoss):
 
         local_render_loss = sum(ls) / len(ls) 
         global_render_loss = sum(global_ls) / len(global_ls)
-        print(f">>> [render loss] batchsize {B}, local_render_loss: {local_render_loss}, global_render_loss: {global_render_loss}")
+        if self.verbose:
+            print(f">>> [render loss] batchsize {B}, local_render_loss: {local_render_loss}, global_render_loss: {global_render_loss}")
         if kw is not None and kw.get("global_only", None) is not None:
             return global_render_loss, details
         return (local_render_loss + global_render_loss) / 2, details
@@ -316,9 +318,9 @@ class Regr2DGrid(Criterion, MultiLoss):
         
         return pts2d[..., :2].view(B, H, W, 2)
 
-    def __init__(self, criterion, view_only=False):
+    def __init__(self, criterion, verbose=False):
         super().__init__(criterion)
-        self.view_only = view_only
+        self.verbose = verbose
 
     def img_loss(self, a, b):
         return self.criterion(a, b)
@@ -393,7 +395,8 @@ class Regr2DGrid(Criterion, MultiLoss):
 
         local_grid_loss = sum(ls) / len(ls) 
         global_grid_loss = sum(global_ls) / len(global_ls)
-        print(f">>> [Regr2D loss] batchsize {B}, local_grid_loss: {local_grid_loss}, global_grid_loss: {global_grid_loss}")
+        if self.verbose:
+            print(f">>> [Regr2D loss] batchsize {B}, local_grid_loss: {local_grid_loss}, global_grid_loss: {global_grid_loss}")
         if kw is not None and kw.get("global_only", None) is not None:
             return global_grid_loss, details
         return (local_grid_loss + global_grid_loss) / 2, details
