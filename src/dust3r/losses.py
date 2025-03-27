@@ -381,21 +381,6 @@ class Regr2DGrid(Criterion, MultiLoss):
         for i, l in enumerate(ls):
             details[self_name + f"_grid/{i+1}"] = float(l)
             details[self_name + f"_global_grid/{i+1}"] = float(global_ls[i])
-        
-        # --------------------- add other info to details for vis -------------------- #
-        for i in range(len(ls)):
-            details[f"gt_img{i+1}"] = gts[i]["img"].permute(0, 2, 3, 1).detach()
-            details[f"self_conf_{i+1}"] = preds[i]["conf_self"].detach()
-            details[f"conf_{i+1}"] = preds[i]["conf"].detach()
-
-            if "img_mask" in gts[i] and "ray_mask" in gts[i]:
-                details[f"img_mask_{i+1}"] = gts[i]["img_mask"].detach()
-                details[f"ray_mask_{i+1}"] = gts[i]["ray_mask"].detach()
-
-            if "desc" in preds[i]:
-                details[f"desc_{i+1}"] = preds[i]["desc"].detach()
-
-            details[f"pred_rgb_{i+1}"] = preds[i]["rgb"].detach()
 
         local_grid_loss = sum(ls) / len(ls) 
         global_grid_loss = sum(global_ls) / len(global_ls)
