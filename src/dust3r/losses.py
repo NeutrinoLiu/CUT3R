@@ -270,7 +270,7 @@ class RenderLoss(Criterion, MultiLoss):
         pr_pts_list = [pred["pts3d_in_self_view"] for pred in preds]
         intrinsics = [gt["camera_intrinsics"] for gt in gts] 
         result = [render(intri, pr_pts, rgb) for intri, pr_pts, rgb in zip(intrinsics, pr_pts_list, rgb_reference)]
-        pred_img = [res[1].permute(0, 3, 1, 2) for res in result] # result: (pts_render, 3dgs_render, 3dgs_depth, accs), img in (B, H, W, 3)
+        pred_img = [res[0].permute(0, 3, 1, 2) for res in result] # result: [rgb, depth], (B, H, W, 3), (B, H, W)
         ls = [self.img_loss(pred_rgb, gt_rgb) for pred_rgb, gt_rgb in zip(pred_img, gt_img)]
 
         # ---------------------------- global reprojection --------------------------- #

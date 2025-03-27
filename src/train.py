@@ -201,7 +201,7 @@ def train(args):
 
     if args.pretrained and not args.resume:
         printer.info(f"Loading pretrained: {args.pretrained}")
-        ckpt = torch.load(args.pretrained, map_location=device)
+        ckpt = torch.load(args.pretrained, map_location=device, weights_only=False)
         load_only_encoder = getattr(args, "load_only_encoder", False)
         if load_only_encoder:
             filtered_state_dict = {
@@ -773,8 +773,12 @@ def vis_and_cat(
         self_conf_vis = colorize(self_conf, append_cbar=True)
     gt_imgs_vis = torch.zeros_like(cross_gt_depths_vis)
     gt_imgs_vis[: gt_imgs.shape[0], : gt_imgs.shape[1]] = gt_imgs
-    pred_imgs_vis = torch.zeros_like(cross_gt_depths_vis)
-    pred_imgs_vis[: pred_imgs.shape[0], : pred_imgs.shape[1]] = pred_imgs
+
+    if pred_imgs is not None:
+        pred_imgs_vis = torch.zeros_like(cross_gt_depths_vis)
+        pred_imgs_vis[: pred_imgs.shape[0], : pred_imgs.shape[1]] = pred_imgs
+    else:
+        pred_imgs_vis = None
 
     self_gt_gsimg_vis = torch.zeros_like(cross_gt_depths_vis)
     self_gt_gsimg_vis[: self_gt_gsimg.shape[0], : self_gt_gsimg.shape[1]] = self_gt_gsimg * 0.5 + 0.5
@@ -822,17 +826,15 @@ def get_vis_imgs_new(loss_details, num_imgs_vis, num_views, is_metric):
     ret_dict = {}
     gt_img_list = [[] for _ in range(num_imgs_vis)]
     pred_img_list = [[] for _ in range(num_imgs_vis)]
+    rgb_pred_exits = False
 
     cross_gt_depth_list = [[] for _ in range(num_imgs_vis)]
     cross_pred_depth_list = [[] for _ in range(num_imgs_vis)]
-
     self_gt_depth_list = [[] for _ in range(num_imgs_vis)]
     self_pred_depth_list = [[] for _ in range(num_imgs_vis)]
 
     cross_view_conf_list = [[] for _ in range(num_imgs_vis)]
     self_view_conf_list = [[] for _ in range(num_imgs_vis)]
-    cross_view_conf_exits = False
-    self_view_conf_exits = False
 
     img_mask_list = [[] for _ in range(num_imgs_vis)]
     ray_mask_list = [[] for _ in range(num_imgs_vis)]
@@ -852,83 +854,39 @@ def get_vis_imgs_new(loss_details, num_imgs_vis, num_views, is_metric):
         stride = 1
     for i in range(0, num_views, stride):
         gt_imgs = 0.5 * (loss_details[f"gt_img{i+1}"] + 1)[:num_imgs_vis].detach().cpu()
-        width = gt_imgs.shape[2]
-        pred_imgs = (
-            0.5 * (loss_details[f"pred_rgb_{i+1}"] + 1)[:num_imgs_vis].detach().cpu()
-        )
         gt_img_list = batch_append(gt_img_list, gt_imgs.unbind(dim=0))
-        pred_img_list = batch_append(pred_img_list, pred_imgs.unbind(dim=0))
+        width = gt_imgs.shape[2]
 
-        cross_pred_depths = (
-            loss_details[f"pred_depth_{i+1}"][:num_imgs_vis].detach().cpu()
-        )
-        cross_gt_depths = (
-            loss_details[f"gt_depth_{i+1}"]
-            .to(gt_imgs.device)[:num_imgs_vis]
-            .detach()
-            .cpu()
-        )
-        cross_pred_depth_list = batch_append(
-            cross_pred_depth_list, cross_pred_depths.unbind(dim=0)
-        )
-        cross_gt_depth_list = batch_append(
-            cross_gt_depth_list, cross_gt_depths.unbind(dim=0)
-        )
-
-        self_gt_depths = (
-            loss_details[f"self_gt_depth_{i+1}"][:num_imgs_vis].detach().cpu()
-        )
-        self_pred_depths = (
-            loss_details[f"self_pred_depth_{i+1}"][:num_imgs_vis].detach().cpu()
-        )
-        self_gt_depth_list = batch_append(
-            self_gt_depth_list, self_gt_depths.unbind(dim=0)
-        )
-        self_pred_depth_list = batch_append(
-            self_pred_depth_list, self_pred_depths.unbind(dim=0)
-        )
-
-        self_gt_gsimg = (
-            loss_details[f"self_gt_gsimg_{i+1}"][:num_imgs_vis].detach().cpu()
-        )
-        self_gt_gsimg_list = batch_append(
-            self_gt_gsimg_list, self_gt_gsimg.unbind(dim=0)
-        )
-        self_pred_gsimg = (
-            loss_details[f"self_pred_gsimg_{i+1}"][:num_imgs_vis].detach().cpu()
-        )
-        self_pred_gsimg_list = batch_append(
-            self_pred_gsimg_list, self_pred_gsimg.unbind(dim=0)
-        )
-        cross_pred_gsimg = (
-            loss_details[f"pred_gsimg_{i+1}"][:num_imgs_vis].detach().cpu()
-        )
-        cross_pred_gsimg_list = batch_append(
-            cross_pred_gsimg_list, cross_pred_gsimg.unbind(dim=0)
-        )
-        cross_gt_gsimg = (
-            loss_details[f"gt_gsimg_{i+1}"][:num_imgs_vis].detach().cpu()
-        )
-        cross_gt_gsimg_list = batch_append(
-            cross_gt_gsimg_list, cross_gt_gsimg.unbind(dim=0)
-        )
-
-
-        if f"conf_{i+1}" in loss_details:
-            cross_view_conf = loss_details[f"conf_{i+1}"][:num_imgs_vis].detach().cpu()
-            cross_view_conf_list = batch_append(
-                cross_view_conf_list, cross_view_conf.unbind(dim=0)
+        if f"pred_rgb_{i+1}" in loss_details:
+            pred_imgs = (
+                0.5 * (loss_details[f"pred_rgb_{i+1}"] + 1)[:num_imgs_vis].detach().cpu()
             )
-            cross_view_conf_exits = True
+            pred_img_list = batch_append(pred_img_list, pred_imgs.unbind(dim=0))
+            rgb_pred_exits = True
 
-        if f"self_conf_{i+1}" in loss_details:
-            self_view_conf = (
-                loss_details[f"self_conf_{i+1}"][:num_imgs_vis].detach().cpu()
-            )
-            self_view_conf_list = batch_append(
-                self_view_conf_list, self_view_conf.unbind(dim=0)
-            )
-            self_view_conf_exits = True
+
+        cross_pred_depths = loss_details[f"pred_depth_{i+1}"][:num_imgs_vis].detach().cpu()
+        cross_gt_depths = loss_details[f"gt_depth_{i+1}"][:num_imgs_vis].detach().cpu()
+        self_gt_depths = loss_details[f"self_gt_depth_{i+1}"][:num_imgs_vis].detach().cpu()
+        self_pred_depths = loss_details[f"self_pred_depth_{i+1}"][:num_imgs_vis].detach().cpu()
+        cross_pred_depth_list = batch_append(cross_pred_depth_list, cross_pred_depths.unbind(dim=0))
+        cross_gt_depth_list = batch_append(cross_gt_depth_list, cross_gt_depths.unbind(dim=0))
+        self_gt_depth_list = batch_append(self_gt_depth_list, self_gt_depths.unbind(dim=0))
+        self_pred_depth_list = batch_append(self_pred_depth_list, self_pred_depths.unbind(dim=0))
+
+        self_gt_gsimg = loss_details[f"self_gt_gsimg_{i+1}"][:num_imgs_vis].detach().cpu()
+        self_pred_gsimg = loss_details[f"self_pred_gsimg_{i+1}"][:num_imgs_vis].detach().cpu()
+        cross_pred_gsimg = loss_details[f"pred_gsimg_{i+1}"][:num_imgs_vis].detach().cpu()
+        cross_gt_gsimg = loss_details[f"gt_gsimg_{i+1}"][:num_imgs_vis].detach().cpu()
+        self_gt_gsimg_list = batch_append(self_gt_gsimg_list, self_gt_gsimg.unbind(dim=0))
+        self_pred_gsimg_list = batch_append(self_pred_gsimg_list, self_pred_gsimg.unbind(dim=0))
+        cross_pred_gsimg_list = batch_append(cross_pred_gsimg_list, cross_pred_gsimg.unbind(dim=0))
+        cross_gt_gsimg_list = batch_append(cross_gt_gsimg_list, cross_gt_gsimg.unbind(dim=0))
+
+        cross_view_conf = loss_details[f"conf_{i+1}"][:num_imgs_vis].detach().cpu()
+        cross_view_conf_list = batch_append(cross_view_conf_list, cross_view_conf.unbind(dim=0))
+        self_view_conf = (loss_details[f"self_conf_{i+1}"][:num_imgs_vis].detach().cpu())
+        self_view_conf_list = batch_append(self_view_conf_list, self_view_conf.unbind(dim=0))
 
         img_mask_list = batch_append(
             img_mask_list,
@@ -940,32 +898,22 @@ def get_vis_imgs_new(loss_details, num_imgs_vis, num_views, is_metric):
         )
 
     # each element in the list is [H, num_views * W, (3)], the size of the list is num_imgs_vis
-    gt_img_list = [torch.cat(sublist, dim=1) for sublist in gt_img_list if len(sublist) > 0] 
-    pred_img_list = [torch.cat(sublist, dim=1) for sublist in pred_img_list if len(sublist) > 0]
-    cross_pred_depth_list = [
-        torch.cat(sublist, dim=1) for sublist in cross_pred_depth_list if len(sublist) > 0
-    ]
+    gt_img_list = [torch.cat(sublist, dim=1) for sublist in gt_img_list if len(sublist) > 0]
+    pred_img_list = [torch.cat(sublist, dim=1) for sublist in pred_img_list if len(sublist) > 0] \
+        if rgb_pred_exits else [None for _ in range(len(gt_img_list))]
+
+    cross_pred_depth_list = [torch.cat(sublist, dim=1) for sublist in cross_pred_depth_list if len(sublist) > 0]
     cross_gt_depth_list = [torch.cat(sublist, dim=1) for sublist in cross_gt_depth_list if len(sublist) > 0]
     self_gt_depth_list = [torch.cat(sublist, dim=1) for sublist in self_gt_depth_list if len(sublist) > 0]
-    self_pred_depth_list = [
-        torch.cat(sublist, dim=1) for sublist in self_pred_depth_list if len(sublist) > 0
-    ]
-    cross_view_conf_list = (
-        [torch.cat(sublist, dim=1) for sublist in cross_view_conf_list if len(sublist) > 0]
-        if cross_view_conf_exits
-        else []
-    )
-    self_view_conf_list = (
-        [torch.cat(sublist, dim=1) for sublist in self_view_conf_list if len(sublist) > 0]
-        if self_view_conf_exits
-        else []
-    )
+    self_pred_depth_list = [torch.cat(sublist, dim=1) for sublist in self_pred_depth_list if len(sublist) > 0]
+
+    cross_view_conf_list = [torch.cat(sublist, dim=1) for sublist in cross_view_conf_list if len(sublist) > 0]
+    self_view_conf_list = [torch.cat(sublist, dim=1) for sublist in self_view_conf_list if len(sublist) > 0]
 
     cross_gt_gsimg_list = [torch.cat(sublist, dim=1) for sublist in cross_gt_gsimg_list if len(sublist) > 0]
     cross_pred_gsimg_list = [torch.cat(sublist, dim=1) for sublist in cross_pred_gsimg_list if len(sublist) > 0]
     self_gt_gsimg_list = [torch.cat(sublist, dim=1) for sublist in self_gt_gsimg_list if len(sublist) > 0]
     self_pred_gsimg_list = [torch.cat(sublist, dim=1) for sublist in self_pred_gsimg_list if len(sublist) > 0]
-
 
     # each elment in the list is [num_views,], the size of the list is num_imgs_vis
     img_mask_list = [torch.stack(sublist, dim=0) for sublist in img_mask_list if len(sublist) > 0]
@@ -978,16 +926,20 @@ def get_vis_imgs_new(loss_details, num_imgs_vis, num_views, is_metric):
     max_valid_imgs = len(gt_img_list)
     for i in range(min(num_imgs_vis, max_valid_imgs)):
         out = vis_and_cat(
+            # coloring
             gt_img_list[i],
             pred_img_list[i],
+            # depth
             cross_gt_depth_list[i],
             cross_pred_depth_list[i],
             self_gt_depth_list[i],
             self_pred_depth_list[i],
+            # conf
             cross_view_conf_list[i],
             self_view_conf_list[i],
             ray_indicator[i],
             is_metric[i],
+            # reprojection
             self_gt_gsimg_list[i],
             self_pred_gsimg_list[i],
             cross_gt_gsimg_list[i],

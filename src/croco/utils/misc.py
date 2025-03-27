@@ -116,11 +116,10 @@ class MetricLogger(object):
         )
 
     def __str__(self):
-        loss_str = ["\n", "=== MetricLogger ===\n"]
+        loss_str = ["\n"]
         for name, meter in self.meters.items():
             if "/" not in name:
-                loss_str.append("\t{}: {}\n".format(name, str(meter)))
-        loss_str.append("=== MetricLogger ===\n")
+                loss_str.append("{}: {}\n".format(name, str(meter)))
         return self.delimiter.join(loss_str)
 
     def synchronize_between_processes(self, accelerator):
