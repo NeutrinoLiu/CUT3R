@@ -126,8 +126,7 @@ def render(
                 packed=False,
                 render_mode="RGB+D",
             )
-            depths.append(rgbd[..., 3])
-            imgs.append(rgbd[..., :3])
+            img, depth = rgbd[..., :3].squeeze(), rgbd[..., 3].squeeze()
         else:
             img, depth = render_point_cloud(pts3d[i].T, rgbs[i].T, intrinsics[i], img_size[1], img_size[0])
         imgs.append(img[None])
@@ -139,7 +138,7 @@ def render(
     return imgs, depths
 
 
-def get_render_results(gts, preds, self_view=False, render_pts=True):
+def get_render_results(gts, preds, self_view=False, render_pts=False):
     device = preds[0]["pts3d_in_self_view"].device
     with torch.no_grad():
         depths = []
@@ -172,7 +171,7 @@ def get_render_results(gts, preds, self_view=False, render_pts=True):
 
     return depths, gt_depths, imgs, gt_imgs
 
-def get_render_results_reproj(gts, preds, render_pts=True):
+def get_render_results_reproj(gts, preds, render_pts=False):
     device = preds[0]["pts3d_in_self_view"].device
     with torch.no_grad():
         depths = []

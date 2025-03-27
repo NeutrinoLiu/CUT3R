@@ -453,14 +453,14 @@ def train_one_epoch(
             loss, loss_details = result["loss"]  # criterion returns two values
 
             loss_value = float(loss)
-
+            is_finanite = lambda x: torch.isfinite(x).all().item() if isinstance(x, torch.Tensor) else math.isfinite(x)
             if not math.isfinite(loss_value):
                 is_finite = {
-                    k: torch.isfinite(v).all().item()
+                    k: is_finanite(v)
                     for k, v in loss_details.items()
                 }
                 print(
-                    f"Loss is {loss_value}, stopping training, loss details: {is_finite}"
+                    f"Loss is {loss_value}, stopping training, loss details: {json.dumps(is_finite, indent=2)}"
                 )
                 sys.exit(1)
             if not result.get("already_backprop", False):
@@ -475,7 +475,7 @@ def train_one_epoch(
 
             is_metric = batch[0]["is_metric"]
             curr_num_view = len(batch)
-            print(">>> trained a sequence of {} views, details ↓".format(curr_num_view))
+            print(">>> trained a sequence of {} views".format(curr_num_view))
 
             del loss
             tb_vis_img = (data_iter_step + 1) % accum_iter == 0 and (
@@ -522,13 +522,13 @@ def train_one_epoch(
                     continue
                 with torch.no_grad():
                     depths_self, gt_depths_self, gsimg_self, gt_gsimg_self = get_render_results(
-                        batch, result["pred"], self_view=True
+                        batch, result["pred"], self_view=True, render_pts=False
                     )
                     # depths_cross, gt_depths_cross, gsimg_cross, gt_gsimg_cross = get_render_results(
                     #     batch, result["pred"], self_view=False
                     # )
                     depths_cross, gt_depths_cross, gsimg_cross, gt_gsimg_cross = get_render_results_reproj(
-                        batch, result["pred"]
+                        batch, result["pred"], render_pts=False
                     )
                     for k in range(len(batch)):
                         loss_details[f"self_pred_depth_{k+1}"] = (
@@ -645,8 +645,11 @@ def test_one_epoch(
         depths_self, gt_depths_self, gsimg_self, gt_gsimg_self = get_render_results(
             batch, result["pred"], self_view=True
         )
-        depths_cross, gt_depths_cross, gsimg_cross, gt_gsimg_cross = get_render_results(
-            batch, result["pred"], self_view=False
+        # depths_cross, gt_depths_cross, gsimg_cross, gt_gsimg_cross = get_render_results(
+        #     batch, result["pred"], self_view=False
+        # )
+        depths_cross, gt_depths_cross, gsimg_cross, gt_gsimg_cross = get_render_results_reproj(
+            batch, result["pred"]
         )
         for k in range(len(batch)):
             loss_details[f"self_pred_depth_{k+1}"] = depths_self[k].detach().cpu()
