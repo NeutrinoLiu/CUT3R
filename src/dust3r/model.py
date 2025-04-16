@@ -816,11 +816,27 @@ class ARCroco3DStereo(CroCoNet):
     def _forward_impl(self, views, ret_state=False):
         shape, feat_ls, pos = self._encode_views(views)
         feat = feat_ls[-1]
+
+        # ---------------------------- vanilla state and mem --------------------------- #
         state_feat, state_pos = self._init_state(feat[0], pos[0])
         mem = self.pose_retriever.mem.expand(feat[0].shape[0], -1, -1)
         init_state_feat = state_feat.clone()
         init_mem = mem.clone()
         all_state_args = [(state_feat, state_pos, init_state_feat, mem, init_mem)]
+
+        # --------------------------- parallel state and mem --------------------------- #
+        g_state_stride = 2
+        g_state_fuser = lambda x, y: (x + y) / 2    # hopefully we only update tokens, ignore pe here
+        g_state_mediator = lambda x, y: (x, y)
+
+        if g_state_stride > 1:
+            state_feat_g, state_pos_g = self._init_state(feat[0], pos[0])
+            mem_g = self.pose_retriever.mem.expand(feat[0].shape[0], -1, -1)
+            init_state_feat_g = state_feat_g.clone()
+            init_mem_g = mem_g.clone()
+            all_state_args_g = [(state_feat_g, state_pos_g, init_state_feat_g, mem_g, init_mem_g)]
+        # ------------------------------------- - ------------------------------------ #
+
         ress = []
         for i in range(len(views)):
             feat_i = feat[i]
@@ -834,9 +850,25 @@ class ARCroco3DStereo(CroCoNet):
                 pose_pos_i = -torch.ones(
                     feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
                 )
+
+                # --------------------------- query parallel mem then -------------------------- #
+                if g_state_stride > 1:
+                    if i == 0:
+                        pose_feat_i_g = self.pose_token.expand(feat_i.shape[0], -1, -1)
+                    else:
+                        pose_feat_i_g = self.pose_retriever.inquire(
+                            global_img_feat_i, mem_g
+                        )
+                    pose_pos_i_g = -torch.ones(
+                        feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
+                    )
             else:
                 pose_feat_i = None
                 pose_pos_i = None
+                if g_state_stride > 1:
+                    pose_feat_i_g = None
+                    pose_pos_i_g = None
+
             new_state_feat, dec = self._recurrent_rollout(
                 state_feat,
                 state_pos,
@@ -849,19 +881,39 @@ class ARCroco3DStereo(CroCoNet):
                 reset_mask=views[i]["reset"],
                 update=views[i].get("update", None),
             )
-            out_pose_feat_i = dec[-1][:, 0:1]
-            new_mem = self.pose_retriever.update_mem(
-                mem, global_img_feat_i, out_pose_feat_i
-            )
-            assert len(dec) == self.dec_depth + 1
+
+            # --------------------------- decode parallel state -------------------------- #
+            if g_state_stride > 1:
+                new_state_feat_g, dec_g = self._recurrent_rollout(
+                    state_feat_g,
+                    state_pos_g,
+                    feat_i,
+                    pos_i,
+                    pose_feat_i_g,
+                    pose_pos_i_g,
+                    init_state_feat_g,
+                    img_mask=views[i]["img_mask"],
+                    reset_mask=views[i]["reset"],
+                    update=views[i].get("update", None),
+                )
+                dec_fused = [
+                    g_state_fuser(dec[i], dec_g[i])
+                    for i in range(len(dec))
+                ]
+            else:
+                dec_fused = dec
+
+            assert len(dec_fused) == self.dec_depth + 1
             head_input = [
-                dec[0].float(),
-                dec[self.dec_depth * 2 // 4][:, 1:].float(),
-                dec[self.dec_depth * 3 // 4][:, 1:].float(),
-                dec[self.dec_depth].float(),
+                dec_fused[0].float(),
+                dec_fused[self.dec_depth * 2 // 4][:, 1:].float(),
+                dec_fused[self.dec_depth * 3 // 4][:, 1:].float(),
+                dec_fused[self.dec_depth].float(),
             ]
             res = self._downstream_head(head_input, shape[i], pos=pos_i)
             ress.append(res)
+
+            # -------------------------- calc state update mask -------------------------- #
             img_mask = views[i]["img_mask"]
             update = views[i].get("update", None)
             if update is not None:
@@ -871,13 +923,26 @@ class ARCroco3DStereo(CroCoNet):
             else:
                 update_mask = img_mask
             update_mask = update_mask[:, None, None].float()
+            reset_mask = views[i]["reset"]
+
+            # --------------------- meditate two state before update --------------------- #
+            if g_state_stride > 1 and i % g_state_stride == 0:
+                state_feat, state_feat_g = g_state_mediator(
+                    state_feat, state_feat_g
+                )
+                mem, mem_g = g_state_mediator(mem, mem_g)
+
+            # ------------------------- update vanilla mem&state ------------------------- #
             state_feat = new_state_feat * update_mask + state_feat * (
                 1 - update_mask
             )  # update global state
+            out_pose_feat_i = dec[-1][:, 0:1]
+            new_mem = self.pose_retriever.update_mem(
+                mem, global_img_feat_i, out_pose_feat_i
+            )
             mem = new_mem * update_mask + mem * (
                 1 - update_mask
             )  # then update local state
-            reset_mask = views[i]["reset"]
             if reset_mask is not None:
                 reset_mask = reset_mask[:, None, None].float()
                 state_feat = init_state_feat * reset_mask + state_feat * (
@@ -887,6 +952,31 @@ class ARCroco3DStereo(CroCoNet):
             all_state_args.append(
                 (state_feat, state_pos, init_state_feat, mem, init_mem)
             )
+
+            # ------------------------- update parallel mem&state ------------------------- #
+            if g_state_stride > 1 and i % g_state_stride == 0:
+                state_feat_g = new_state_feat_g * update_mask + state_feat_g * (
+                    1 - update_mask
+                )
+                out_pose_feat_i_g = dec_g[-1][:, 0:1]
+                new_mem_g = self.pose_retriever.update_mem(
+                    mem_g, global_img_feat_i, out_pose_feat_i_g
+                )
+                mem_g = new_mem_g * update_mask + mem_g * (
+                    1 - update_mask
+                )
+                if reset_mask is not None:
+                    # reset_mask = reset_mask[:, None, None].float()
+                    state_feat_g = init_state_feat_g * reset_mask + state_feat_g * (
+                        1 - reset_mask
+                    )
+                    mem_g = init_mem_g * reset_mask + mem_g * (1 - reset_mask)
+                all_state_args_g.append(
+                    (state_feat_g, state_pos_g, init_state_feat_g, mem_g, init_mem_g)
+                )
+            elif g_state_stride > 1: # not a state update frame
+                all_state_args_g.append( None )
+
         if ret_state:
             return ress, views, all_state_args
         return ress, views
