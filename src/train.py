@@ -58,6 +58,11 @@ torch.multiprocessing.set_sharing_strategy("file_system")
 
 printer = get_logger(__name__, log_level="DEBUG")
 
+import logging
+import matplotlib
+
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
+
 
 def setup_for_distributed(accelerator: Accelerator):
     """
@@ -100,6 +105,7 @@ def save_current_code(outdir):
             "*.idea*",
             "*.zip",
             "*.jpg",
+            "*.pth",
         ),
         dirs_exist_ok=True,
     )
@@ -855,35 +861,30 @@ def get_vis_imgs_new(loss_details, num_imgs_vis, num_views, is_metric):
         )
 
     # each element in the list is [H, num_views * W, (3)], the size of the list is num_imgs_vis
-    gt_img_list = [torch.cat(sublist, dim=1) for sublist in gt_img_list]
-    pred_img_list = [torch.cat(sublist, dim=1) for sublist in pred_img_list]
-    cross_pred_depth_list = [
-        torch.cat(sublist, dim=1) for sublist in cross_pred_depth_list
-    ]
-    cross_gt_depth_list = [torch.cat(sublist, dim=1) for sublist in cross_gt_depth_list]
-    self_gt_depth_list = [torch.cat(sublist, dim=1) for sublist in self_gt_depth_list]
-    self_pred_depth_list = [
-        torch.cat(sublist, dim=1) for sublist in self_pred_depth_list
-    ]
-    cross_view_conf_list = (
-        [torch.cat(sublist, dim=1) for sublist in cross_view_conf_list]
+    gt_img_list =           [torch.cat(sublist, dim=1) for sublist in gt_img_list   if len(sublist) > 0]
+    pred_img_list =         [torch.cat(sublist, dim=1) for sublist in pred_img_list if len(sublist) > 0]
+    cross_pred_depth_list = [torch.cat(sublist, dim=1) for sublist in cross_pred_depth_list if len(sublist) > 0]
+    cross_gt_depth_list =   [torch.cat(sublist, dim=1) for sublist in cross_gt_depth_list   if len(sublist) > 0]
+    self_gt_depth_list =    [torch.cat(sublist, dim=1) for sublist in self_gt_depth_list    if len(sublist) > 0]
+    self_pred_depth_list =  [torch.cat(sublist, dim=1) for sublist in self_pred_depth_list  if len(sublist) > 0]
+    cross_view_conf_list = ([torch.cat(sublist, dim=1) for sublist in cross_view_conf_list  if len(sublist) > 0]
         if cross_view_conf_exits
         else []
     )
-    self_view_conf_list = (
-        [torch.cat(sublist, dim=1) for sublist in self_view_conf_list]
+    self_view_conf_list =  ([torch.cat(sublist, dim=1) for sublist in self_view_conf_list  if len(sublist) > 0]
         if self_view_conf_exits
         else []
     )
     # each elment in the list is [num_views,], the size of the list is num_imgs_vis
-    img_mask_list = [torch.stack(sublist, dim=0) for sublist in img_mask_list]
-    ray_mask_list = [torch.stack(sublist, dim=0) for sublist in ray_mask_list]
+    img_mask_list =         [torch.stack(sublist, dim=0) for sublist in img_mask_list if len(sublist) > 0]
+    ray_mask_list =         [torch.stack(sublist, dim=0) for sublist in ray_mask_list if len(sublist) > 0]
 
     ray_indicator = gen_mask_indicator(
         img_mask_list, ray_mask_list, len(img_mask_list[0]), 30, width
     )
 
-    for i in range(num_imgs_vis):
+    valid_imgs = min(num_imgs_vis, len(gt_img_list))
+    for i in range(valid_imgs):
         out = vis_and_cat(
             gt_img_list[i],
             pred_img_list[i],
