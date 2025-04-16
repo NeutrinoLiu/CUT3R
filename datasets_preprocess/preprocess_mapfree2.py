@@ -31,8 +31,12 @@ def main(rootdir, outdir):
             if os.path.isdir(osp.join(rootdir, env, f))
         ]
         for subseq in subseqs:
-            sparse_dir = osp.join(rootdir, env, subseq, "sparse")
-            images_dir = osp.join(rootdir, env, subseq, "images")
+            if not subseq.startswith("dense"):
+                # ignore "seq*"
+                continue
+            dense_dir = subseq
+            sparse_dir = osp.join(rootdir, env, dense_dir, "sparse")
+            images_dir = osp.join(rootdir, env, dense_dir, "images")
             run(sparse_dir, sparse_dir)
             intrins_file = sparse_dir + "/cameras.txt"
             poses_file = sparse_dir + "/images.txt"
@@ -102,12 +106,19 @@ def main(rootdir, outdir):
 
             for i, img_name in enumerate(tqdm(images)):
                 img_path = os.path.join(images_dir, img_name)
-                rgb = Image.open(img_path)
                 intrinsic = intrinsics[i]
                 pose = poses[i]
                 # save all
                 basename = img_name.split("/")[-1]
-                rgb.save(osp.join(outdir, env, subseq, "rgb", basename))
+                
+                # rgb = Image.open(img_path)
+                # rgb.save(osp.join(outdir, env, subseq, "rgb", basename))
+                # use softlink instead of copy
+                os.symlink(
+                    img_path,
+                    osp.join(outdir, env, subseq, "rgb", basename),
+                    target_is_directory=False,
+                )
                 np.savez(
                     osp.join(
                         outdir, env, subseq, "cam", basename.replace(".jpg", ".npz")
