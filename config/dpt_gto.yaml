@@ -87,7 +87,7 @@ print_freq: 1
 print_img_freq: 50
 num_imgs_vis: 4
 save_dir: 'checkpoints'
-exp_name: 'dpt_regr2'
+exp_name: 'dpt_gto'
 task: 'cut3r'
 logdir: ./${save_dir}/${exp_name}/logs
 output_dir: ./${save_dir}/${exp_name}/
