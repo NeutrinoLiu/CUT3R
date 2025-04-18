@@ -202,7 +202,7 @@ def train(args):
 
     if args.pretrained and not args.resume:
         printer.info(f"Loading pretrained: {args.pretrained}")
-        ckpt = torch.load(args.pretrained, map_location=device)
+        ckpt = torch.load(args.pretrained, map_location=device, weights_only=False)
         load_only_encoder = getattr(args, "load_only_encoder", False)
         if load_only_encoder:
             filtered_state_dict = {
@@ -220,7 +220,10 @@ def train(args):
         del ckpt  # in case it occupies memory
 
     # # following timm: set wd as 0 for bias and norm layers
-    param_groups = misc.get_parameter_groups(model, args.weight_decay)
+    param_groups_list_dump = os.path.join(
+        args.output_dir, "param_groups_list.json"
+    )
+    param_groups = misc.get_parameter_groups(model, args.weight_decay, dump_dir=param_groups_list_dump)
     optimizer = torch.optim.AdamW(param_groups, lr=args.lr, betas=(0.9, 0.95))
     # print(optimizer)
     loss_scaler = NativeScaler(accelerator=accelerator)

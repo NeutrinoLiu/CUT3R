@@ -506,7 +506,7 @@ def _get_num_layer_for_vit(var_name, enc_depth, dec_depth):
 
 
 def get_parameter_groups(
-    model, weight_decay, layer_decay=1.0, skip_list=(), no_lr_scale_list=[]
+    model, weight_decay, layer_decay=1.0, skip_list=(), no_lr_scale_list=[], dump_dir=None
 ):
     parameter_group_names = {}
     parameter_group_vars = {}
@@ -572,7 +572,13 @@ def get_parameter_groups(
 
         parameter_group_vars[group_name]["params"].append(param)
         parameter_group_names[group_name]["params"].append(name)
-    printer.info("Param groups = %s" % json.dumps(parameter_group_names, indent=2))
+    
+    if dump_dir is not None:
+        printer.info("Dumping parameter groups to %s" % dump_dir)
+        with open(dump_dir, "w") as f:
+            json.dump(parameter_group_names, f, indent=2)
+    else:
+        printer.info("Param groups = %s" % json.dumps(parameter_group_names, indent=2))
     return list(parameter_group_vars.values())
 
 
