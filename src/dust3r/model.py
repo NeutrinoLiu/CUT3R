@@ -302,6 +302,16 @@ class ARCroco3DStereo(CroCoNet):
         )
         self.set_freeze(config.freeze)
 
+        self.g_state_stride = 1
+        self._set_dec_fuser(
+            self.dec_embed_dim, # same input output dim for decout fuser
+            config.state_dec_num_heads,                         # TBD
+            self.dec_depth,                                     # TBD
+            self.croco_args.get("mlp_ratio", None),             # TBD
+            self.croco_args.get("norm_layer", None),            # TBD
+            self.croco_args.get("norm_im2_in_dec", None),       # TBD
+        )
+
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, **kw):
         if os.path.isfile(pretrained_model_name_or_path):
@@ -747,6 +757,193 @@ class ARCroco3DStereo(CroCoNet):
             mem,
         )
 
+    def _forward_encoder_g(self, views):
+        shape, feat_ls, pos = self._encode_views(views)
+        feat = feat_ls[-1]
+
+        # ---------------------------- vanilla state and mem --------------------------- #
+        state_feat, state_pos = self._init_state(feat[0], pos[0])
+        mem = self.pose_retriever.mem.expand(feat[0].shape[0], -1, -1)
+        init_state_feat = state_feat.clone()
+        init_mem = mem.clone()
+
+        # --------------------------- parallel state and mem --------------------------- #
+
+        if self.g_state_stride > 1:
+            state_feat_g, state_pos_g = self._init_state(feat[0], pos[0])
+            mem_g = self.pose_retriever.mem.expand(feat[0].shape[0], -1, -1)
+            init_state_feat_g = state_feat_g.clone()
+            init_mem_g = mem_g.clone()
+        else:
+            state_feat_g = None
+            state_pos_g = None
+            mem_g = None
+            init_state_feat_g = None
+            init_mem_g = None
+        
+        return (shape, feat, pos), (
+            init_state_feat,
+            init_mem,
+            state_feat,
+            state_pos,
+            mem
+        ), (
+            init_state_feat_g,
+            init_mem_g,
+            state_feat_g,
+            state_pos_g,
+            mem_g,
+        )
+
+    def _forward_decoder_step_g(
+        self,
+        views,
+        i,
+        feat_i,
+        pos_i,
+        shape_i,
+        init_state_feat,
+        init_mem,
+        state_feat,
+        state_pos,
+        mem,
+        init_state_feat_g = None,
+        init_mem_g = None,
+        state_feat_g = None,
+        state_pos_g = None,
+        mem_g = None,
+    ):
+        if self.pose_head_flag:
+            global_img_feat_i = self._get_img_level_feat(feat_i)
+            if i == 0:
+                pose_feat_i = self.pose_token.expand(feat_i.shape[0], -1, -1)
+            else:
+                pose_feat_i = self.pose_retriever.inquire(global_img_feat_i, mem)
+            pose_pos_i = -torch.ones(
+                feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
+            )
+
+            # --------------------------- query parallel mem then -------------------------- #
+            if self.g_state_stride > 1:
+                if i == 0:
+                    pose_feat_i_g = self.pose_token.expand(feat_i.shape[0], -1, -1)
+                else:
+                    pose_feat_i_g = self.pose_retriever.inquire(
+                        global_img_feat_i, mem_g
+                    )
+                pose_pos_i_g = -torch.ones(
+                    feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
+                )
+        else:
+            pose_feat_i = None
+            pose_pos_i = None
+            if self.g_state_stride > 1:
+                pose_feat_i_g = None
+                pose_pos_i_g = None
+
+        new_state_feat, dec = self._recurrent_rollout(
+            state_feat,
+            state_pos,
+            feat_i,
+            pos_i,
+            pose_feat_i,
+            pose_pos_i,
+            init_state_feat,
+            img_mask=views[i]["img_mask"],
+            reset_mask=views[i]["reset"],
+            update=views[i].get("update", None),
+        )
+
+        # --------------------------- decode parallel state -------------------------- #
+        if self.g_state_stride > 1:
+            new_state_feat_g, dec_g = self._recurrent_rollout(
+                state_feat_g,
+                state_pos_g,
+                feat_i,
+                pos_i,
+                pose_feat_i_g,
+                pose_pos_i_g,
+                init_state_feat_g,
+                img_mask=views[i]["img_mask"],
+                reset_mask=views[i]["reset"],
+                update=views[i].get("update", None),
+            )
+            dec_fused = dec[:-1]
+            dec_fused_last = self._dec_fusion(dec[-1], dec_g[-1])
+            dec_fused += (dec_fused_last, ) # fuse the last layer dec output
+        else:
+            dec_fused = dec
+
+        assert len(dec_fused) == self.dec_depth + 1
+        head_input = [
+            dec_fused[0].float(),
+            dec_fused[self.dec_depth * 2 // 4][:, 1:].float(),
+            dec_fused[self.dec_depth * 3 // 4][:, 1:].float(),
+            dec_fused[self.dec_depth].float(),
+        ]
+        res = self._downstream_head(head_input, shape_i, pos=pos_i)
+
+        # -------------------------- calc state update mask -------------------------- #
+        img_mask = views[i]["img_mask"]
+        update = views[i].get("update", None)
+        if update is not None:
+            update_mask = (
+                img_mask & update
+            )  # if don't update, then whatever img_mask
+        else:
+            update_mask = img_mask
+        update_mask = update_mask[:, None, None].float()
+        reset_mask = views[i]["reset"]
+
+        # ----------------------------- calculate new mem ---------------------------- #
+        out_pose_feat_i = dec[-1][:, 0:1]
+        new_mem = self.pose_retriever.update_mem(
+            mem, global_img_feat_i, out_pose_feat_i
+        )
+        if self.g_state_stride > 1 and i % self.g_state_stride == 0:
+            out_pose_feat_i_g = dec_g[-1][:, 0:1]
+            new_mem_g = self.pose_retriever.update_mem(
+                mem_g, global_img_feat_i, out_pose_feat_i_g
+            )
+
+        # --------------------- meditate two state before update --------------------- #
+        if self.g_state_stride > 1 and i % self.g_state_stride == 0:
+            new_state_feat, new_state_feat_g = self._state_mediator(
+                new_state_feat, new_state_feat_g
+            )
+            new_mem, new_mem_g = self._state_mediator(new_mem, new_mem_g)
+
+        # ------------------------- update vanilla mem&state ------------------------- #
+        state_feat = new_state_feat * update_mask + state_feat * (
+            1 - update_mask
+        )  # update global state
+        mem = new_mem * update_mask + mem * (
+            1 - update_mask
+        )  # then update local state
+        if reset_mask is not None:
+            reset_mask = reset_mask[:, None, None].float()
+            state_feat = init_state_feat * reset_mask + state_feat * (
+                1 - reset_mask
+            )
+            mem = init_mem * reset_mask + mem * (1 - reset_mask)
+
+        # ------------------------- update parallel mem&state ------------------------- #
+        if self.g_state_stride > 1 and i % self.g_state_stride == 0:
+            state_feat_g = new_state_feat_g * update_mask + state_feat_g * (
+                1 - update_mask
+            )
+            mem_g = new_mem_g * update_mask + mem_g * (
+                1 - update_mask
+            )
+            if reset_mask is not None:
+                # reset_mask = reset_mask[:, None, None].float()
+                state_feat_g = init_state_feat_g * reset_mask + state_feat_g * (
+                    1 - reset_mask
+                )
+                mem_g = init_mem_g * reset_mask + mem_g * (1 - reset_mask)
+
+        return res, (state_feat, mem), (state_feat_g, mem_g)
+
     def _forward_decoder_step(
         self,
         views,
@@ -813,168 +1010,154 @@ class ARCroco3DStereo(CroCoNet):
             mem = init_mem * reset_mask + mem * (1 - reset_mask)
         return res, (state_feat, mem)
 
-    def _forward_impl(self, views, ret_state=False):
-        shape, feat_ls, pos = self._encode_views(views)
-        feat = feat_ls[-1]
+    def _set_dec_fuser(
+        self,
+        output_embed_dim,
+        fuser_num_heads,
+        fuser_depth,
+        mlp_ratio,
+        norm_layer,
+        norm_im2_in_dec,
+    ):
+        self.fuser_blocks = nn.ModuleList(
+            [
+                DecoderBlock(
+                    output_embed_dim,
+                    fuser_num_heads,
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=True,
+                    norm_layer=norm_layer,
+                    norm_mem=norm_im2_in_dec,
+                    rope=self.rope,
+                )
+                for i in range(fuser_depth)
+            ]
+        )
+        self.fuser_norm = norm_layer(output_embed_dim)
 
-        # ---------------------------- vanilla state and mem --------------------------- #
-        state_feat, state_pos = self._init_state(feat[0], pos[0])
-        mem = self.pose_retriever.mem.expand(feat[0].shape[0], -1, -1)
-        init_state_feat = state_feat.clone()
-        init_mem = mem.clone()
+    def _dec_fusion(self, tok_a, tok_b, avg=True):
+        if avg:
+            return (tok_a + tok_b) / 2
+        else:
+            # use cross attention to fuse
+            pos_a, pos_b = self._dec_fusion_pe(tok_a, tok_b) 
+            for blk in self.fuser_blocks:
+                tok_a, _ = blk(tok_a, tok_b, pos_a, pos_b)
+                tok_b, _ = blk(tok_b, tok_a, pos_b, pos_a)
+            tok_a = self.fuser_norm(tok_a)
+            tok_b = self.fuser_norm(tok_b)
+        return tok_a
+    
+    def _dec_fusion_pe(self, tok_a, tok_b, pe="2d"):
+        # return pe for tok_a and tok_b
+        print(f"shape of tok_a: {tok_a.shape}, tok_b: {tok_b.shape}", force=True)
+        batch_size = tok_a.shape[0]
+        tok_size = tok_a.shape[1]
+        assert tok_a.shape == tok_b.shape, f"fusion needed same shape, but got {tok_a.shape} and {tok_b.shape}"
+        if pe == "1d":
+            pose_a = (
+                torch.tensor(
+                    [[i, i] for i in range(tok_size)],
+                    dtype=tok_a.dtype,
+                    device=tok_a.device,
+                )[None]
+                .expand(batch_size, -1, -1)
+                .contiguous()
+            )  
+            pose_b = (
+                torch.tensor(
+                    [[i, i] for i in range(tok_size)],
+                    dtype=tok_b.dtype,
+                    device=tok_b.device,
+                )[None]
+                .expand(batch_size, -1, -1)
+                .contiguous()
+            )  
+        elif pe == "2d":
+            width = int(tok_size**0.5)
+            width = width + 1 if width % 2 == 1 else width
+            pose_a = (
+                torch.tensor(
+                    [[i // width, i % width] for i in range(tok_size)],
+                    dtype=tok_a.dtype,
+                    device=tok_a.device,
+                )[None]
+                .expand(batch_size, -1, -1)
+                .contiguous()
+            )
+            pose_b = (
+                torch.tensor(
+                    [[i // width, i % width] for i in range(tok_size)],
+                    dtype=tok_b.dtype,
+                    device=tok_b.device,
+                )[None]
+                .expand(batch_size, -1, -1)
+                .contiguous()
+            )
+        elif pe == "none":
+            pose_a = None
+            pose_b = None
+        else:
+            raise NotImplementedError(f"pe {pe} not supported")
+        return pose_a, pose_b
+
+    def _state_mediator(self, state_feat, state_feat_g):
+        return state_feat, state_feat_g
+
+    def _forward_impl(self, views, ret_state=False):
+
+        r1, r2, r3 = self._forward_encoder_g(views)
+        shape, feat, pos = r1
+        (init_state_feat,
+            init_mem,
+            state_feat,
+            state_pos,
+            mem) = r2
+        (init_state_feat_g,
+            init_mem_g,
+            state_feat_g,
+            state_pos_g,
+            mem_g) = r3
+
         all_state_args = [(state_feat, state_pos, init_state_feat, mem, init_mem)]
 
-        # --------------------------- parallel state and mem --------------------------- #
-        g_state_stride = 2
-        g_state_fuser = lambda x, y: (x + y) / 2    # hopefully we only update tokens, ignore pe here
-        g_state_mediator = lambda x, y: (x, y)
-
-        if g_state_stride > 1:
-            state_feat_g, state_pos_g = self._init_state(feat[0], pos[0])
-            mem_g = self.pose_retriever.mem.expand(feat[0].shape[0], -1, -1)
-            init_state_feat_g = state_feat_g.clone()
-            init_mem_g = mem_g.clone()
+        if self.g_state_stride > 1:
             all_state_args_g = [(state_feat_g, state_pos_g, init_state_feat_g, mem_g, init_mem_g)]
-        # ------------------------------------- - ------------------------------------ #
 
         ress = []
         for i in range(len(views)):
-            feat_i = feat[i]
-            pos_i = pos[i]
-            if self.pose_head_flag:
-                global_img_feat_i = self._get_img_level_feat(feat_i)
-                if i == 0:
-                    pose_feat_i = self.pose_token.expand(feat_i.shape[0], -1, -1)
-                else:
-                    pose_feat_i = self.pose_retriever.inquire(global_img_feat_i, mem)
-                pose_pos_i = -torch.ones(
-                    feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
-                )
-
-                # --------------------------- query parallel mem then -------------------------- #
-                if g_state_stride > 1:
-                    if i == 0:
-                        pose_feat_i_g = self.pose_token.expand(feat_i.shape[0], -1, -1)
-                    else:
-                        pose_feat_i_g = self.pose_retriever.inquire(
-                            global_img_feat_i, mem_g
-                        )
-                    pose_pos_i_g = -torch.ones(
-                        feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
-                    )
-            else:
-                pose_feat_i = None
-                pose_pos_i = None
-                if g_state_stride > 1:
-                    pose_feat_i_g = None
-                    pose_pos_i_g = None
-
-            new_state_feat, dec = self._recurrent_rollout(
+            r1, r2, r3 = self._forward_decoder_step_g(
+                views,
+                i,
+                feat[i],
+                pos[i],
+                shape[i],
+                init_state_feat,
+                init_mem,
                 state_feat,
                 state_pos,
-                feat_i,
-                pos_i,
-                pose_feat_i,
-                pose_pos_i,
-                init_state_feat,
-                img_mask=views[i]["img_mask"],
-                reset_mask=views[i]["reset"],
-                update=views[i].get("update", None),
+                mem,
+                init_state_feat_g=init_state_feat_g,
+                init_mem_g=init_mem_g,
+                state_feat_g=state_feat_g,
+                state_pos_g=state_pos_g,
+                mem_g=mem_g
             )
+            res = r1
+            (state_feat, mem) = r2
+            (state_feat_g, mem_g) = r3
 
-            # --------------------------- decode parallel state -------------------------- #
-            if g_state_stride > 1:
-                new_state_feat_g, dec_g = self._recurrent_rollout(
-                    state_feat_g,
-                    state_pos_g,
-                    feat_i,
-                    pos_i,
-                    pose_feat_i_g,
-                    pose_pos_i_g,
-                    init_state_feat_g,
-                    img_mask=views[i]["img_mask"],
-                    reset_mask=views[i]["reset"],
-                    update=views[i].get("update", None),
-                )
-                dec_fused = [
-                    g_state_fuser(dec[i], dec_g[i])
-                    for i in range(len(dec))
-                ]
-            else:
-                dec_fused = dec
-
-            assert len(dec_fused) == self.dec_depth + 1
-            head_input = [
-                dec_fused[0].float(),
-                dec_fused[self.dec_depth * 2 // 4][:, 1:].float(),
-                dec_fused[self.dec_depth * 3 // 4][:, 1:].float(),
-                dec_fused[self.dec_depth].float(),
-            ]
-            res = self._downstream_head(head_input, shape[i], pos=pos_i)
             ress.append(res)
 
-            # -------------------------- calc state update mask -------------------------- #
-            img_mask = views[i]["img_mask"]
-            update = views[i].get("update", None)
-            if update is not None:
-                update_mask = (
-                    img_mask & update
-                )  # if don't update, then whatever img_mask
-            else:
-                update_mask = img_mask
-            update_mask = update_mask[:, None, None].float()
-            reset_mask = views[i]["reset"]
-
-            # --------------------- meditate two state before update --------------------- #
-            if g_state_stride > 1 and i % g_state_stride == 0:
-                state_feat, state_feat_g = g_state_mediator(
-                    state_feat, state_feat_g
-                )
-                mem, mem_g = g_state_mediator(mem, mem_g)
-
-            # ------------------------- update vanilla mem&state ------------------------- #
-            state_feat = new_state_feat * update_mask + state_feat * (
-                1 - update_mask
-            )  # update global state
-            out_pose_feat_i = dec[-1][:, 0:1]
-            new_mem = self.pose_retriever.update_mem(
-                mem, global_img_feat_i, out_pose_feat_i
-            )
-            mem = new_mem * update_mask + mem * (
-                1 - update_mask
-            )  # then update local state
-            if reset_mask is not None:
-                reset_mask = reset_mask[:, None, None].float()
-                state_feat = init_state_feat * reset_mask + state_feat * (
-                    1 - reset_mask
-                )
-                mem = init_mem * reset_mask + mem * (1 - reset_mask)
             all_state_args.append(
                 (state_feat, state_pos, init_state_feat, mem, init_mem)
             )
 
-            # ------------------------- update parallel mem&state ------------------------- #
-            if g_state_stride > 1 and i % g_state_stride == 0:
-                state_feat_g = new_state_feat_g * update_mask + state_feat_g * (
-                    1 - update_mask
-                )
-                out_pose_feat_i_g = dec_g[-1][:, 0:1]
-                new_mem_g = self.pose_retriever.update_mem(
-                    mem_g, global_img_feat_i, out_pose_feat_i_g
-                )
-                mem_g = new_mem_g * update_mask + mem_g * (
-                    1 - update_mask
-                )
-                if reset_mask is not None:
-                    # reset_mask = reset_mask[:, None, None].float()
-                    state_feat_g = init_state_feat_g * reset_mask + state_feat_g * (
-                        1 - reset_mask
-                    )
-                    mem_g = init_mem_g * reset_mask + mem_g * (1 - reset_mask)
+            if self.g_state_stride > 1 and i % self.g_state_stride == 0:
                 all_state_args_g.append(
                     (state_feat_g, state_pos_g, init_state_feat_g, mem_g, init_mem_g)
                 )
-            elif g_state_stride > 1: # not a state update frame
+            elif self.g_state_stride > 1: # not a state update frame
                 all_state_args_g.append( None )
 
         if ret_state:
@@ -992,6 +1175,9 @@ class ARCroco3DStereo(CroCoNet):
     def inference_step(
         self, view, state_feat, state_pos, init_state_feat, mem, init_mem
     ):
+        raise NotImplementedError(
+            "inference_step is not modified yet"
+        )
         batch_size = view["img"].shape[0]
         raymaps = []
         shapes = []
@@ -1051,6 +1237,9 @@ class ARCroco3DStereo(CroCoNet):
         return res, view
 
     def forward_recurrent(self, views, device, ret_state=False):
+        raise NotImplementedError(
+            "forward_recurrent is not modified yet"
+        )
         ress = []
         all_state_args = []
         for i, view in enumerate(views):

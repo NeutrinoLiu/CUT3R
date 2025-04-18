@@ -111,20 +111,33 @@ def loss_of_one_batch_tbptt(
     all_preds = []
     all_loss = 0.0
     all_loss_details = {}
-    with torch.cuda.amp.autocast(enabled=not inference):
+    with torch.amp.autocast("cuda", enabled=not inference):
         with torch.no_grad():
-            (feat, pos, shape), (
-                init_state_feat,
+            # ----------------------- parallel global state encoder ---------------------- #
+            r1, r2, r3 = accelerator.unwrap_model(model)._forward_encoder_g(batch)
+            (shape, feat, pos) = r1
+            (init_state_feat,
                 init_mem,
                 state_feat,
                 state_pos,
                 mem,
-            ) = accelerator.unwrap_model(model)._forward_encoder(batch)
+            ) = r2
+            (init_state_feat_g,
+                init_mem_g,
+                state_feat_g,
+                state_pos_g,
+                mem_g,
+            ) = r3
+        apply_GSE = state_feat_g is not None
+        
         feat = [f.detach() for f in feat]
         pos = [p.detach() for p in pos]
         shape = [s.detach() for s in shape]
         init_state_feat = init_state_feat.detach()
         init_mem = init_mem.detach()
+        if apply_GSE:
+            init_state_feat_g = init_state_feat_g.detach()
+            init_mem_g = init_mem_g.detach()
 
         for chunk_id in range((len(batch) - 1) // chunk_size + 1):
             preds = []
@@ -132,15 +145,20 @@ def loss_of_one_batch_tbptt(
             state_feat = state_feat.detach()
             state_pos = state_pos.detach()
             mem = mem.detach()
+            if apply_GSE:
+                state_feat_g = state_feat_g.detach()
+                state_pos_g = state_pos_g.detach()
+                mem_g = mem_g.detach()
+
             if chunk_id < ((len(batch) - 1) // chunk_size + 1) - 4:
                 with torch.no_grad():
                     for in_chunk_idx in range(chunk_size):
                         i = chunk_id * chunk_size + in_chunk_idx
                         if i >= len(batch):
                             break
-                        res, (state_feat, mem) = accelerator.unwrap_model(
+                        res, (state_feat, mem), (state_feat_g, mem_g) = accelerator.unwrap_model(
                             model
-                        )._forward_decoder_step(
+                        )._forward_decoder_step_g(
                             batch,
                             i,
                             feat_i=feat[i],
@@ -151,11 +169,17 @@ def loss_of_one_batch_tbptt(
                             state_feat=state_feat,
                             state_pos=state_pos,
                             mem=mem,
+                            # for PGS
+                            init_state_feat_g=init_state_feat_g,
+                            init_mem_g=init_mem_g,
+                            state_feat_g=state_feat_g,
+                            state_pos_g=state_pos_g,
+                            mem_g=mem_g,
                         )
                         preds.append(res)
                         all_preds.append({k: v.detach() for k, v in res.items()})
                         chunk.append(batch[i])
-                with torch.cuda.amp.autocast(enabled=False):
+                with torch.amp.autocast("cuda", enabled=False):
                     loss, loss_details = (
                         criterion(chunk, preds, camera1=batch[0]["camera_pose"])
                         if criterion is not None
@@ -171,9 +195,9 @@ def loss_of_one_batch_tbptt(
                     i = chunk_id * chunk_size + in_chunk_idx
                     if i >= len(batch):
                         break
-                    res, (state_feat, mem) = accelerator.unwrap_model(
+                    res, (state_feat, mem), (state_feat_g, mem_g) = accelerator.unwrap_model(
                         model
-                    )._forward_decoder_step(
+                    )._forward_decoder_step_g(
                         batch,
                         i,
                         feat_i=feat[i],
@@ -184,11 +208,17 @@ def loss_of_one_batch_tbptt(
                         state_feat=state_feat,
                         state_pos=state_pos,
                         mem=mem,
+                        # for PGS
+                        init_state_feat_g=init_state_feat_g,
+                        init_mem_g=init_mem_g,
+                        state_feat_g=state_feat_g,
+                        state_pos_g=state_pos_g,
+                        mem_g=mem_g,
                     )
                     preds.append(res)
                     all_preds.append({k: v.detach() for k, v in res.items()})
                     chunk.append(batch[i])
-                with torch.cuda.amp.autocast(enabled=False):
+                with torch.amp.autocast("cuda", enabled=False):
                     loss, loss_details = (
                         criterion(chunk, preds, camera1=batch[0]["camera_pose"])
                         if criterion is not None
