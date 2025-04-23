@@ -21,10 +21,15 @@ class TartanAir_Multi(BaseMultiViewDataset):
         self.max_interval = 20
         super().__init__(*args, **kwargs)
         # loading all
-        assert self.split is None
-        self._load_data()
+        # assert self.split is None
+        self._load_data(self.split)
 
-    def _load_data(self):
+    def _load_data(self, split):
+        # print(f"split is {split}")
+        if split is not None:
+            assert split in ["train", "test"]
+            self.ROOT = os.path.join(self.ROOT, split)
+
         scene_dirs = sorted(
             [
                 d

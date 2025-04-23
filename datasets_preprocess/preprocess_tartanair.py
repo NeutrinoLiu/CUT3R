@@ -12,7 +12,7 @@ import cv2
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import shutil
-import src.dust3r.datasets.utils.cropping as cropping  # noqa
+# import src.dust3r.datasets.utils.cropping as cropping  # noqa
 from scipy.spatial.transform import Rotation as R
 
 
@@ -47,7 +47,7 @@ def main(rootdir, outdir):
                 frame_dir = osp.join(rootdir, env, difficulty, subscene)
                 rgb_dir = osp.join(frame_dir, "image_left")
                 depth_dir = osp.join(frame_dir, "depth_left")
-                flow_dir = osp.join(frame_dir, "flow")
+                # flow_dir = osp.join(frame_dir, "flow")
                 intrinsics = np.array(
                     [[320.0, 0.0, 320.0], [0.0, 320.0, 240.0], [0.0, 0.0, 1.0]]
                 ).astype(np.float32)
@@ -57,7 +57,7 @@ def main(rootdir, outdir):
                 assert (
                     len(os.listdir(rgb_dir))
                     == len(os.listdir(depth_dir))
-                    == len(os.listdir(flow_dir)) // 2 + 1
+                    # == len(os.listdir(flow_dir)) // 2 + 1
                     == frame_num
                 )
                 for i in tqdm(range(frame_num)):
@@ -69,22 +69,23 @@ def main(rootdir, outdir):
                     out_depth_path = osp.join(
                         outdir, env, difficulty, subscene, f"{i:06d}_depth.npy"
                     )
-                    if i < frame_num - 1:
-                        fflow_path = osp.join(flow_dir, f"{i:06d}_{i+1:06d}_flow.npy")
-                        mask_path = osp.join(flow_dir, f"{i:06d}_{i+1:06d}_mask.npy")
-                    else:
-                        fflow_path = None
-                        mask_path = None
-                    out_fflow_path = (
-                        osp.join(outdir, env, difficulty, subscene, f"{i:06d}_flow.npy")
-                        if fflow_path is not None
-                        else None
-                    )
-                    out_mask_path = (
-                        osp.join(outdir, env, difficulty, subscene, f"{i:06d}_mask.npy")
-                        if mask_path is not None
-                        else None
-                    )
+                    # if i < frame_num - 1:
+                    #     fflow_path = osp.join(flow_dir, f"{i:06d}_{i+1:06d}_flow.npy")
+                    #     mask_path = osp.join(flow_dir, f"{i:06d}_{i+1:06d}_mask.npy")
+                    # else:
+                    #     fflow_path = None
+                    #     mask_path = None
+                    
+                    # out_fflow_path = (
+                    #     osp.join(outdir, env, difficulty, subscene, f"{i:06d}_flow.npy")
+                    #     if fflow_path is not None
+                    #     else None
+                    # )
+                    # out_mask_path = (
+                    #     osp.join(outdir, env, difficulty, subscene, f"{i:06d}_mask.npy")
+                    #     if mask_path is not None
+                    #     else None
+                    # )
                     pose = poses[i]
                     x, y, z, qx, qy, qz, qw = pose
                     rotation = R.from_quat([qx, qy, qz, qw]).as_matrix()
@@ -98,10 +99,10 @@ def main(rootdir, outdir):
                     # copy
                     shutil.copy(rgb_path, out_rgb_path)
                     shutil.copy(depth_path, out_depth_path)
-                    if fflow_path is not None:
-                        shutil.copy(fflow_path, out_fflow_path)
-                    if mask_path is not None:
-                        shutil.copy(mask_path, out_mask_path)
+                    # if fflow_path is not None:
+                    #     shutil.copy(fflow_path, out_fflow_path)
+                    # if mask_path is not None:
+                    #     shutil.copy(mask_path, out_mask_path)
                     np.savez(
                         osp.join(outdir, env, difficulty, subscene, f"{i:06d}_cam.npz"),
                         camera_pose=c2w.astype(np.float32),

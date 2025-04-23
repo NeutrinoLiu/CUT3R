@@ -52,7 +52,7 @@ allow_repeat: True
 
 # dataset8: BlendedMVS_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/dust3r_data/processed_blendedmvs/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset9: MegaDepth_Multi(allow_repeat=${allow_repeat}, split="train", ROOT="../../data/dust3r_data/processed_megadepth", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
-dataset10: MapFree_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../data/mast3r_data/processed_mapfree/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
+dataset10: MapFree_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../data/processed_mapfree/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset11: Waymo_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/dust3r_data/processed_waymo/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset12: VirtualKITTI2_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/mast3r_data/processed_vkitti", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset13: UnReal4K_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/mast3r_data/processed_unreal4k/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
@@ -82,7 +82,7 @@ dataset10: MapFree_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../data
 # dataset32: MP3D_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/custom_data/processed_mp3d/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 
 train_dataset: 10000 @ ${dataset10} 
-test_dataset: 100 @ MapFree_Multi(split='test', ROOT='../data/mast3r_data/processed_mapfree/', resolution=(512, 384), num_views=${num_test_views}, seed=42, n_corres=${n_corres_test})
+test_dataset: 100 @ MapFree_Multi(split='test', ROOT='../data/processed_mapfree/', resolution=(512, 384), num_views=${num_test_views}, seed=42, n_corres=${n_corres_test})
 
 seed: 0
 batch_size: 6

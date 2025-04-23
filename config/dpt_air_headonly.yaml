@@ -46,17 +46,17 @@ allow_repeat: True
 
 # dataset3: ARKitScenes_Multi(allow_repeat=${allow_repeat}, split='train', ROOT='../../data/dust3r_data/processed_arkitscenes/', aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset4: ARKitScenesHighRes_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/dust3r_data/processed_arkitscenes_highres", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
-dataset5: ScanNetpp_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../data/processed_scannetpp/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
+# dataset5: ScanNetpp_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/dust3r_data/processed_scannetpp/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset6: ScanNet_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/dust3r_data/processed_scannet/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset7: HyperSim_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/custom_data/processed_hypersim", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 
 # dataset8: BlendedMVS_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/dust3r_data/processed_blendedmvs/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset9: MegaDepth_Multi(allow_repeat=${allow_repeat}, split="train", ROOT="../../data/dust3r_data/processed_megadepth", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
-dataset10: MapFree_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../data/mast3r_data/processed_mapfree/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
+# dataset10: MapFree_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../data/mast3r_data/processed_mapfree/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset11: Waymo_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/dust3r_data/processed_waymo/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset12: VirtualKITTI2_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/mast3r_data/processed_vkitti", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset13: UnReal4K_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/mast3r_data/processed_unreal4k/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
-# dataset14: TartanAir_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/mast3r_data/processed_tartanair/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
+dataset14: TartanAir_Multi(allow_repeat=${allow_repeat}, split="train", ROOT="../data/processed_tartanair/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 
 # dataset15: DL3DV_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/custom_data/processed_dl3dv", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 
@@ -81,8 +81,8 @@ dataset10: MapFree_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../data
 # dataset31: UASOL_Multi(allow_repeat=${allow_repeat}, split='train', ROOT="../../data/custom_data/processed_uasol", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 # dataset32: MP3D_Multi(allow_repeat=${allow_repeat}, split=None, ROOT="../../data/custom_data/processed_mp3d/", aug_crop=16, resolution=[(512, 384), (512, 336), (512, 288), (512, 256), (512, 208), (512, 144), (384, 512), (336, 512), (288, 512), (256, 512)], transform=SeqColorJitter, num_views=${num_views}, n_corres=${n_corres_train})
 
-train_dataset: 10000 @ ${dataset10} 
-test_dataset: 100 @ MapFree_Multi(split='test', ROOT='../data/mast3r_data/processed_mapfree/', resolution=(512, 384), num_views=${num_test_views}, seed=42, n_corres=${n_corres_test})
+train_dataset: 10000 @ ${dataset14} 
+test_dataset: 100 @ TartanAir_Multi(split='test', ROOT='../data/processed_tartanair/', resolution=(512, 384), num_views=${num_test_views}, seed=42, n_corres=${n_corres_test})
 
 seed: 0
 batch_size: 6
@@ -91,8 +91,8 @@ gradient_checkpointing: False
 epochs: 10
 start_epoch: 0
 weight_decay: 0.05
-lr: 1e-7
-min_lr: 1e-8
+lr: 1e-6
+min_lr: 1e-7
 warmup_epochs: 0.5
 amp: 1
 
@@ -112,7 +112,7 @@ print_freq: 1
 print_img_freq: 50
 num_imgs_vis: 4
 save_dir: 'checkpoints'
-exp_name: 'dpt_mf_snpp_headonly'
+exp_name: 'air_headonly'
 task: 'cut3r'
 logdir: ./${save_dir}/${exp_name}/logs
 output_dir: ./${save_dir}/${exp_name}/

@@ -1,0 +1,2 @@
+export CKPT=<name_of_your_CKPT_under_src_no_suffix>
+run corresponded bash script
