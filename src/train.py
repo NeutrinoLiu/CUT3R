@@ -293,7 +293,8 @@ def train(args):
 
         # Test on multiple datasets
         new_best = False
-        if epoch > 0 and args.eval_freq > 0 and epoch % args.eval_freq == 0:
+        if epoch > 0 and args.eval_freq > 0 and epoch % args.eval_freq == 0 \
+            or (epoch == 0 and args.pre_eval):
             test_stats = {}
             for test_name, testset in data_loader_test.items():
                 stats = test_one_epoch(

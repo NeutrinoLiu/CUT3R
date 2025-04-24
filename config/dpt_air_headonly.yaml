@@ -1,6 +1,8 @@
 pgs_stride: 2
 pgs_num_heads: 8
-pgs_depth: 2 
+pgs_depth: 2
+pre_eval: False # eval at iter 0
+
 model: > 
   ARCroco3DStereo(
     ARCroco3DStereoConfig(
