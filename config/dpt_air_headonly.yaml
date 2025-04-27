@@ -1,12 +1,14 @@
-pgs_stride: 2
-pgs_num_heads: 8
-pgs_depth: 2
+pgs_revisit_gap: 1
+pgs_stride: 1
+pgs_num_heads: 0
+pgs_depth: 0
 pre_eval: False # eval at iter 0
+freeze: "encoder_and_decoder"
 
 model: > 
   ARCroco3DStereo(
     ARCroco3DStereoConfig(
-      freeze='encoder_and_decoder', 
+      freeze='${freeze}', 
       state_size=768,
       state_pe='2d',
       pos_embed='RoPE100',
@@ -22,6 +24,7 @@ model: >
       enc_embed_dim=1024, enc_depth=24, enc_num_heads=16,
       dec_embed_dim=768, dec_depth=12, dec_num_heads=12,
       landscape_only=False,
+      pgs_revisit_gap=${pgs_revisit_gap},
       pgs_update_stride=${pgs_stride},
       pgs_fuser_num_heads=${pgs_num_heads},
       pgs_fuser_depth=${pgs_depth},

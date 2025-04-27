@@ -34,6 +34,25 @@ def get_args_parser():
     return parser
 
 
+import torch
+def save_per_frame_metrics(error_maps, depth_log_path, hws):
+    ret = {}
+    for i, seq_hw in enumerate(zip(error_maps, hws)):
+        seq_error, hw = seq_hw
+        errors = seq_error.reshape(-1, hw[0], hw[1])
+        num_frames = errors.shape[0]
+        print(f"num of frames in seq {i} : {num_frames}")
+        per_frame_error = []
+        for frame in range(num_frames):
+            error_map = errors[frame]
+            per_frame_error.append(torch.mean(error_map).item())
+
+        ret[f"seq_{i}"] = per_frame_error
+
+    with open(depth_log_path, "a") as f:
+        f.write(f"\n{json.dumps(ret)}")
+    print("Per frame metrics saved to", depth_log_path)
+            
 def main(args):
     if args.eval_dataset == "sintel":
         TAG_FLOAT = 202021.25
@@ -101,6 +120,8 @@ def main(args):
 
             grouped_gt_depth = group_by_directory(depth_pathes)
             gathered_depth_metrics = []
+            error_maps = []
+            hws = []
 
             for key in tqdm(grouped_pred_depth.keys()):
                 pd_pathes = grouped_pred_depth[key]
@@ -155,6 +176,8 @@ def main(args):
                         )
                     )
                 gathered_depth_metrics.append(depth_results)
+                error_maps.append(error_map)
+                hws.append(gt_depth.shape[1:3])
 
             depth_log_path = f"{args.output_dir}/result_{args.align}.json"
             average_metrics = {
@@ -170,6 +193,8 @@ def main(args):
             print("Average depth evaluation metrics:", average_metrics)
             with open(depth_log_path, "w") as f:
                 f.write(json.dumps(average_metrics))
+
+            save_per_frame_metrics(error_maps, depth_log_path, hws)
 
         get_video_results()
     elif args.eval_dataset == "bonn":
@@ -211,6 +236,9 @@ def main(args):
             grouped_pred_depth = group_by_directory(pred_pathes)
             grouped_gt_depth = group_by_directory(depth_pathes, idx=-2)
             gathered_depth_metrics = []
+            error_maps = []
+            hws = []
+
             for key in tqdm(grouped_gt_depth.keys()):
                 pd_pathes = grouped_pred_depth[key[10:]]
                 gt_pathes = grouped_gt_depth[key]
@@ -260,6 +288,8 @@ def main(args):
                         )
                     )
                 gathered_depth_metrics.append(depth_results)
+                error_maps.append(error_map)
+                hws.append(gt_depth.shape[1:3])
 
                 # seq_len = gt_depth.shape[0]
                 # error_map = error_map.reshape(seq_len, -1, error_map.shape[-1]).cpu()
@@ -280,6 +310,8 @@ def main(args):
             print("Average depth evaluation metrics:", average_metrics)
             with open(depth_log_path, "w") as f:
                 f.write(json.dumps(average_metrics))
+
+            save_per_frame_metrics(error_maps, depth_log_path, hws)
 
         get_video_results()
     elif args.eval_dataset == "kitti":
@@ -310,6 +342,9 @@ def main(args):
             grouped_pred_depth = group_by_directory(pred_pathes)
             grouped_gt_depth = group_by_directory(depth_pathes)
             gathered_depth_metrics = []
+            error_maps = []
+            hws = []
+
             for key in tqdm(grouped_pred_depth.keys()):
                 pd_pathes = grouped_pred_depth[key]
                 gt_pathes = grouped_gt_depth[key]
@@ -360,6 +395,8 @@ def main(args):
                         )
                     )
                 gathered_depth_metrics.append(depth_results)
+                error_maps.append(error_map)
+                hws.append(gt_depth.shape[1:3])
 
             depth_log_path = f"{args.output_dir}/result_{args.align}.json"
             average_metrics = {
@@ -375,6 +412,8 @@ def main(args):
             print("Average depth evaluation metrics:", average_metrics)
             with open(depth_log_path, "w") as f:
                 f.write(json.dumps(average_metrics))
+
+            save_per_frame_metrics(error_maps, depth_log_path, hws)
 
         get_video_results()
 

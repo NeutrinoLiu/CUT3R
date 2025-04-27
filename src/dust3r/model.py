@@ -114,6 +114,7 @@ class ARCroco3DStereoConfig(PretrainedConfig):
         rgb_head=False,
         pose_conf_head=False,
         pose_head=False,
+        pgs_revisit_gap=1,
         pgs_update_stride=1,
         pgs_fuser_depth=4,
         pgs_fuser_num_heads=16,
@@ -138,7 +139,12 @@ class ARCroco3DStereoConfig(PretrainedConfig):
         self.pose_conf_head = pose_conf_head
         self.pose_head = pose_head
         self.croco_kwargs = croco_kwargs
+        self.pgs_revisit_gap = pgs_revisit_gap
         self.pgs_update_stride = pgs_update_stride
+        assert (not (self.pgs_update_stride > 1)) or (not (self.pgs_revisit_gap > 1)), (
+            "can not enable both pgs_revisit_gap and pgs_update_stride"
+        )
+
         self.pgs_fuser_depth = pgs_fuser_depth
         self.pgs_fuser_num_heads = pgs_fuser_num_heads
 
@@ -308,8 +314,12 @@ class ARCroco3DStereo(CroCoNet):
         )
         self.set_freeze(config.freeze)
 
+        self.g_state_revisit_gap = config.pgs_revisit_gap
         self.g_state_update_stride = config.pgs_update_stride
-        if self.g_state_update_stride > 1:
+        assert (not (self.g_state_update_stride > 1)) or (
+            not (self.g_state_revisit_gap > 1)
+        ), "can not enable both pgs_revisit_gap and pgs_update_stride"
+        if self.g_state_update_stride > 1 or self.g_state_revisit_gap > 1:
             self._set_dec_fuser(
                 self.dec_embed_dim, # same input output dim for decout fuser
                 config.pgs_fuser_num_heads,                         # TBD
@@ -318,6 +328,9 @@ class ARCroco3DStereo(CroCoNet):
                 self.croco_args.get("norm_layer", None),            # TBD
                 self.croco_args.get("norm_im2_in_dec", None),       # TBD
             )
+        if self.g_state_revisit_gap > 1:
+            import collections
+            self._revisit_buffer = collections.deque(maxlen=self.g_state_revisit_gap)
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, **kw):
@@ -788,6 +801,12 @@ class ARCroco3DStereo(CroCoNet):
             init_state_feat_g = None
             init_mem_g = None
         
+        if self.g_state_revisit_gap > 1:
+            self._revisit_buffer.clear()
+            self._revisit_buffer.append(
+                (state_feat, state_pos, init_state_feat, mem, init_mem)
+            )
+
         return (shape, feat, pos), (
             init_state_feat,
             init_mem,
@@ -820,6 +839,7 @@ class ARCroco3DStereo(CroCoNet):
         state_pos_g = None,
         mem_g = None,
     ):
+        # ---------------------------- vanilla state and mem --------------------------- #
         if self.pose_head_flag:
             global_img_feat_i = self._get_img_level_feat(feat_i)
             if i == 0:
@@ -829,24 +849,9 @@ class ARCroco3DStereo(CroCoNet):
             pose_pos_i = -torch.ones(
                 feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
             )
-
-            # --------------------------- query parallel mem then -------------------------- #
-            if self.g_state_update_stride > 1:
-                if i == 0:
-                    pose_feat_i_g = self.pose_token.expand(feat_i.shape[0], -1, -1)
-                else:
-                    pose_feat_i_g = self.pose_retriever.inquire(
-                        global_img_feat_i, mem_g
-                    )
-                pose_pos_i_g = -torch.ones(
-                    feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
-                )
         else:
             pose_feat_i = None
             pose_pos_i = None
-            if self.g_state_update_stride > 1:
-                pose_feat_i_g = None
-                pose_pos_i_g = None
 
         new_state_feat, dec = self._recurrent_rollout(
             state_feat,
@@ -861,8 +866,54 @@ class ARCroco3DStereo(CroCoNet):
             update=views[i].get("update", None),
         )
 
-        # --------------------------- decode parallel state -------------------------- #
+        # --------------------------- decode revisit state --------------------------- #
+        if self.g_state_revisit_gap > 1 and \
+            len(self._revisit_buffer) >= self.g_state_revisit_gap:
+            state_feat_revisit, state_pos_revisit, init_state_feat_revisit, \
+            mem_revisit, init_mem_revisit = self._revisit_buffer[0]
+
+            if self.pose_head_flag:
+                global_img_feat_i_revisit = self._get_img_level_feat(feat_i)
+                pose_feat_i_revisit = self.pose_retriever.inquire(
+                    global_img_feat_i_revisit, mem_revisit
+                )
+                pose_pos_i_revisit = -torch.ones(
+                    feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
+                )
+            else:
+                pose_feat_i_revisit = None
+                pose_pos_i_revisit = None
+
+            new_state_feat_revisit, dec_revisit = self._recurrent_rollout(
+                state_feat_revisit,
+                state_pos_revisit,
+                feat_i,
+                pos_i,
+                pose_feat_i_revisit,
+                pose_pos_i_revisit,
+                init_state_feat_revisit,
+                img_mask=views[i]["img_mask"],
+                reset_mask=views[i]["reset"],
+                update=views[i].get("update", None),
+            )
+
+
+        # ------------------------ decode parallel state then ------------------------ #
         if self.g_state_update_stride > 1:
+            if self.pose_head_flag:
+                if i == 0:
+                    pose_feat_i_g = self.pose_token.expand(feat_i.shape[0], -1, -1)
+                else:
+                    pose_feat_i_g = self.pose_retriever.inquire(
+                        global_img_feat_i, mem_g
+                    )
+                pose_pos_i_g = -torch.ones(
+                    feat_i.shape[0], 1, 2, device=feat_i.device, dtype=pos_i.dtype
+                )
+            else:
+                pose_feat_i_g = None
+                pose_pos_i_g = None
+
             new_state_feat_g, dec_g = self._recurrent_rollout(
                 state_feat_g,
                 state_pos_g,
@@ -875,9 +926,16 @@ class ARCroco3DStereo(CroCoNet):
                 reset_mask=views[i]["reset"],
                 update=views[i].get("update", None),
             )
+
+        if self.g_state_update_stride > 1:
             dec_fused = dec[:-1]
             dec_fused_last = self._dec_fusion(dec[-1], dec_g[-1])
             dec_fused += (dec_fused_last, ) # fuse the last layer dec output
+        elif self.g_state_revisit_gap > 1 and \
+            len(self._revisit_buffer) >= self.g_state_revisit_gap:
+            dec_fused = dec[:-1]
+            dec_fused_last = self._dec_fusion(dec[-1], dec_revisit[-1])
+            dec_fused += (dec_fused_last, )
         else:
             dec_fused = dec
 
@@ -949,6 +1007,10 @@ class ARCroco3DStereo(CroCoNet):
                 )
                 mem_g = init_mem_g * reset_mask + mem_g * (1 - reset_mask)
 
+        if self.g_state_revisit_gap > 1:
+            self._revisit_buffer.append(
+                (state_feat, state_pos, init_state_feat, mem, init_mem)
+            )
         return res, (state_feat, mem), (state_feat_g, mem_g)
 
     def _forward_decoder_step(
@@ -1134,8 +1196,8 @@ class ARCroco3DStereo(CroCoNet):
 
         all_state_args = [(state_feat, state_pos, init_state_feat, mem, init_mem)]
 
-        if self.g_state_update_stride > 1:
-            all_state_args_g = [(state_feat_g, state_pos_g, init_state_feat_g, mem_g, init_mem_g)]
+        # if self.g_state_update_stride > 1:
+        #     all_state_args_g = [(state_feat_g, state_pos_g, init_state_feat_g, mem_g, init_mem_g)]
 
         ress = []
         for i in range(len(views)):
@@ -1166,12 +1228,12 @@ class ARCroco3DStereo(CroCoNet):
                 (state_feat, state_pos, init_state_feat, mem, init_mem)
             )
 
-            if self.g_state_update_stride > 1 and i % self.g_state_update_stride == 0:
-                all_state_args_g.append(
-                    (state_feat_g, state_pos_g, init_state_feat_g, mem_g, init_mem_g)
-                )
-            elif self.g_state_update_stride > 1: # not a state update frame
-                all_state_args_g.append( None )
+            # if self.g_state_update_stride > 1 and i % self.g_state_update_stride == 0:
+            #     all_state_args_g.append(
+            #         (state_feat_g, state_pos_g, init_state_feat_g, mem_g, init_mem_g)
+            #     )
+            # elif self.g_state_update_stride > 1: # not a state update frame
+            #     all_state_args_g.append( None )
 
         if ret_state:
             return ress, views, all_state_args
